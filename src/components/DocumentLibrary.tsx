@@ -49,11 +49,36 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
   const [uploadStage, setUploadStage] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadDiscipline, setUploadDiscipline] = useState<string>('Estatica');
+  const [deletingBookId, setDeletingBookId] = useState<string | null>(null);
 
   // Chunking Strategy Settings
   const [chunkSize, setChunkSize] = useState<number>(512);
   const [chunkOverlap, setChunkOverlap] = useState<number>(64);
   const [chunkStrategy, setChunkStrategy] = useState<string>('semantic');
+
+  const handleDeleteBook = async (doc: DocumentSource) => {
+    const disc = doc.discipline || 'Estatica';
+    const fileName = doc.fileName || doc.name;
+    setDeletingBookId(doc.id);
+    setUploadError(null);
+    try {
+      const res = await fetch(
+        `/api/library/book/${encodeURIComponent(disc)}/${encodeURIComponent(fileName)}`,
+        { method: 'DELETE', keepalive: true }
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'No se pudo eliminar el libro del disco.');
+      }
+      if (onRefreshBooks) {
+        await onRefreshBooks();
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Error al eliminar el libro.');
+    } finally {
+      setDeletingBookId(null);
+    }
+  };
 
   const handleRealUpload = async (file: File) => {
     setUploadError(null);
@@ -424,14 +449,27 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
                       Indexado
                     </span>
                   </td>
-                  <td className="py-3.5 text-right space-x-2">
-                    <button
-                      onClick={() => onOpenPdf(doc.name, 1)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-neutral-300 hover:text-white border border-white/10 text-[11px] font-mono transition-colors cursor-pointer"
-                    >
-                      <span>Abrir</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
+                  <td className="py-3.5 text-right">
+                    <div className="inline-flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onOpenPdf(doc.fileName || doc.name, 1)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-neutral-300 hover:text-white border border-white/10 text-[11px] font-mono transition-colors cursor-pointer"
+                      >
+                        <span>Abrir</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingBookId === doc.id}
+                        onClick={() => handleDeleteBook(doc)}
+                        className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-red-500/15 text-neutral-400 hover:text-red-200 border border-white/10 hover:border-red-400/50 transition-colors cursor-pointer disabled:opacity-40"
+                        title={`Eliminar ${doc.name} del disco`}
+                        aria-label={`Eliminar ${doc.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

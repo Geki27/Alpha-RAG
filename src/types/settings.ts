@@ -33,6 +33,8 @@ export interface RuntimeTaskSettings {
   thinkingEnabled: boolean;
   effortLevel: EffortLevel;
   searchScope: PersistedSearchScope;
+  hideExamples: boolean;
+  deletedSeedFiles: string[];
 }
 
 export interface ProviderKeyInfo {
@@ -51,6 +53,7 @@ export interface PublicSettingsPayload {
 
 export interface UpdateSettingsPayload {
   settings?: Partial<RuntimeTaskSettings>;
+  detectModels?: boolean;
   apiKeys?: {
     geminiApiKey?: string;
     nvidiaApiKey?: string;
@@ -85,4 +88,6 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeTaskSettings = {
   thinkingEnabled: true,
   effortLevel: 'medium',
   searchScope: 'local',
+  hideExamples: false,
+  deletedSeedFiles: [],
 };

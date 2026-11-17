@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   X,
   Sliders,
@@ -62,6 +62,7 @@ interface SettingsModalProps {
   vignetteDarkness: number;
   setVignetteDarkness: (v: number) => void;
   onResetDefaults: () => void;
+  onRefreshBooks?: () => Promise<void> | void;
 }
 
 const SETTINGS_SECTIONS: Array<{
@@ -126,6 +127,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   vignetteDarkness,
   setVignetteDarkness,
   onResetDefaults,
+  onRefreshBooks,
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('models-tasks');
   const [taskSettings, setTaskSettings] = useState<RuntimeTaskSettings>({
@@ -159,10 +161,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     message: string;
   } | null>(null);
 
+  const hasLoadedModalSettingsRef = useRef(false);
+  const hasUserEditedTaskRef = useRef(false);
+
+  const updateTaskSetting = <K extends keyof RuntimeTaskSettings>(
+    key: K,
+    value: RuntimeTaskSettings[K]
+  ) => {
+    hasUserEditedTaskRef.current = true;
+    setTaskSettings((prev) => ({ ...prev, [key]: value }));
+
+    if (key === 'chatModel' && typeof value === 'string') {
+      setRagModel(value);
+      const matched = availableModels.find((m) => m.id === value);
+      if (matched) {
+        setSelectedModel(matched);
+      }
+    }
+  };
+
   // Load persisted server settings when modal opens
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      hasLoadedModalSettingsRef.current = false;
+      hasUserEditedTaskRef.current = false;
+      return;
+    }
     let cancelled = false;
+    hasLoadedModalSettingsRef.current = false;
+    hasUserEditedTaskRef.current = false;
     setStatusFeedback(null);
     setIsLoadingSettings(true);
 
@@ -185,16 +212,65 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (data.providers) {
           setProvidersInfo(data.providers);
         }
+        hasLoadedModalSettingsRef.current = true;
       })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setIsLoadingSettings(false);
+        if (!cancelled) {
+          hasLoadedModalSettingsRef.current = true;
+          setIsLoadingSettings(false);
+        }
       });
 
     return () => {
       cancelled = true;
     };
   }, [isOpen]);
+
+  // Auto-persist taskSettings edits immediately so closing via X/backdrop never loses changes
+  useEffect(() => {
+    if (!isOpen || !hasLoadedModalSettingsRef.current || !hasUserEditedTaskRef.current) return;
+
+    const timer = setTimeout(() => {
+      fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          settings: {
+            chatModel: taskSettings.chatModel,
+            visionOcrModel: taskSettings.visionOcrModel,
+            webSearchModel: taskSettings.webSearchModel,
+            embeddingModel: taskSettings.embeddingModel,
+            visionOcrEnabled: taskSettings.visionOcrEnabled,
+            ocrMaxPagesPerDoc: taskSettings.ocrMaxPagesPerDoc,
+            ocrMaxFileSizeMb: taskSettings.ocrMaxFileSizeMb,
+            ocrQuality: taskSettings.ocrQuality,
+            ocrTimeoutSeconds: taskSettings.ocrTimeoutSeconds,
+            ocrStrictLatex: taskSettings.ocrStrictLatex,
+            similarityThreshold: taskSettings.similarityThreshold,
+            llmTimeoutSeconds: taskSettings.llmTimeoutSeconds,
+          },
+        }),
+      }).catch(() => {});
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [
+    isOpen,
+    taskSettings.chatModel,
+    taskSettings.visionOcrModel,
+    taskSettings.webSearchModel,
+    taskSettings.embeddingModel,
+    taskSettings.visionOcrEnabled,
+    taskSettings.ocrMaxPagesPerDoc,
+    taskSettings.ocrMaxFileSizeMb,
+    taskSettings.ocrQuality,
+    taskSettings.ocrTimeoutSeconds,
+    taskSettings.ocrStrictLatex,
+    taskSettings.similarityThreshold,
+    taskSettings.llmTimeoutSeconds,
+  ]);
 
   if (!isOpen) return null;
 
@@ -206,11 +282,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setStatusFeedback(null);
 
     try {
-      const payloadSettings: RuntimeTaskSettings = {
-        ...taskSettings,
+      const payloadSettings = {
+        chatModel: taskSettings.chatModel,
+        visionOcrModel: taskSettings.visionOcrModel,
+        webSearchModel: taskSettings.webSearchModel,
+        embeddingModel: taskSettings.embeddingModel,
+        visionOcrEnabled: taskSettings.visionOcrEnabled,
+        ocrMaxPagesPerDoc: taskSettings.ocrMaxPagesPerDoc,
+        ocrMaxFileSizeMb: taskSettings.ocrMaxFileSizeMb,
+        ocrQuality: taskSettings.ocrQuality,
+        ocrTimeoutSeconds: taskSettings.ocrTimeoutSeconds,
+        ocrStrictLatex: taskSettings.ocrStrictLatex,
         topK,
         temperature,
         rerankEnabled,
+        similarityThreshold: taskSettings.similarityThreshold,
+        llmTimeoutSeconds: taskSettings.llmTimeoutSeconds,
         particleSpeed,
         pointSize,
         vignetteDarkness,
@@ -308,6 +395,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleResetAll = async () => {
+    hasUserEditedTaskRef.current = false;
     onResetDefaults();
     try {
       const res = await fetch('/api/settings/reset', { method: 'POST' });
@@ -317,6 +405,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const defaultChat = availableModels.find((m) => m.id === data.settings.chatModel);
         if (defaultChat) setSelectedModel(defaultChat);
         setRagModel(data.settings.chatModel);
+      }
+      if (onRefreshBooks) {
+        await onRefreshBooks();
       }
     } catch {
       setTaskSettings({ ...DEFAULT_RUNTIME_SETTINGS });
@@ -627,9 +718,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </p>
                       <select
                         value={taskSettings.chatModel}
-                        onChange={(e) =>
-                          setTaskSettings((prev) => ({ ...prev, chatModel: e.target.value }))
-                        }
+                        onChange={(e) => updateTaskSetting('chatModel', e.target.value)}
                         disabled={isLoadingSettings}
                         className="w-full rounded-xl bg-black/60 border border-white/15 focus:border-white/40 px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
                       >
@@ -664,9 +753,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </p>
                       <select
                         value={taskSettings.visionOcrModel}
-                        onChange={(e) =>
-                          setTaskSettings((prev) => ({ ...prev, visionOcrModel: e.target.value }))
-                        }
+                        onChange={(e) => updateTaskSetting('visionOcrModel', e.target.value)}
                         disabled={isLoadingSettings}
                         className="w-full rounded-xl bg-black/60 border border-white/15 focus:border-white/40 px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
                       >
@@ -688,9 +775,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </p>
                       <select
                         value={taskSettings.webSearchModel}
-                        onChange={(e) =>
-                          setTaskSettings((prev) => ({ ...prev, webSearchModel: e.target.value }))
-                        }
+                        onChange={(e) => updateTaskSetting('webSearchModel', e.target.value)}
                         disabled={isLoadingSettings}
                         className="w-full rounded-xl bg-black/60 border border-white/15 focus:border-white/40 px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
                       >
@@ -720,9 +805,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </p>
                       <select
                         value={taskSettings.embeddingModel}
-                        onChange={(e) =>
-                          setTaskSettings((prev) => ({ ...prev, embeddingModel: e.target.value }))
-                        }
+                        onChange={(e) => updateTaskSetting('embeddingModel', e.target.value)}
                         disabled={isLoadingSettings}
                         className="w-full rounded-xl bg-black/60 border border-white/15 focus:border-white/40 px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
                       >
@@ -765,9 +848,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() =>
-                      setTaskSettings((prev) => ({ ...prev, visionOcrEnabled: !prev.visionOcrEnabled }))
-                    }
+                    onClick={() => updateTaskSetting('visionOcrEnabled', !taskSettings.visionOcrEnabled)}
                     className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ml-3 ${
                       taskSettings.visionOcrEnabled ? 'bg-white' : 'bg-neutral-800'
                     }`}
@@ -798,12 +879,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     max="200"
                     step="5"
                     value={taskSettings.ocrMaxPagesPerDoc}
-                    onChange={(e) =>
-                      setTaskSettings((prev) => ({
-                        ...prev,
-                        ocrMaxPagesPerDoc: parseInt(e.target.value, 10),
-                      }))
-                    }
+                    onChange={(e) => updateTaskSetting('ocrMaxPagesPerDoc', parseInt(e.target.value, 10))}
                     className="w-full accent-white cursor-pointer"
                   />
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
@@ -813,9 +889,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <button
                           key={preset}
                           type="button"
-                          onClick={() =>
-                            setTaskSettings((prev) => ({ ...prev, ocrMaxPagesPerDoc: preset }))
-                          }
+                          onClick={() => updateTaskSetting('ocrMaxPagesPerDoc', preset)}
                           className={`px-2 py-0.5 rounded border cursor-pointer transition-colors ${
                             taskSettings.ocrMaxPagesPerDoc === preset
                               ? 'bg-white text-black border-white font-semibold'
@@ -841,12 +915,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     max="50"
                     step="1"
                     value={taskSettings.ocrMaxFileSizeMb}
-                    onChange={(e) =>
-                      setTaskSettings((prev) => ({
-                        ...prev,
-                        ocrMaxFileSizeMb: parseInt(e.target.value, 10),
-                      }))
-                    }
+                    onChange={(e) => updateTaskSetting('ocrMaxFileSizeMb', parseInt(e.target.value, 10))}
                     className="w-full accent-white cursor-pointer"
                   />
                   <div className="flex justify-between text-[10px] font-mono text-neutral-500">
@@ -872,9 +941,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         key={opt.id}
                         type="button"
-                        onClick={() =>
-                          setTaskSettings((prev) => ({ ...prev, ocrQuality: opt.id }))
-                        }
+                        onClick={() => updateTaskSetting('ocrQuality', opt.id)}
                         className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                           taskSettings.ocrQuality === opt.id
                             ? 'bg-white text-black border-white font-semibold'
@@ -907,12 +974,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       max="180"
                       step="5"
                       value={taskSettings.ocrTimeoutSeconds}
-                      onChange={(e) =>
-                        setTaskSettings((prev) => ({
-                          ...prev,
-                          ocrTimeoutSeconds: parseInt(e.target.value, 10),
-                        }))
-                      }
+                      onChange={(e) => updateTaskSetting('ocrTimeoutSeconds', parseInt(e.target.value, 10))}
                       className="w-full accent-white cursor-pointer"
                     />
                   </div>
@@ -924,9 +986,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() =>
-                        setTaskSettings((prev) => ({ ...prev, ocrStrictLatex: !prev.ocrStrictLatex }))
-                      }
+                      onClick={() => updateTaskSetting('ocrStrictLatex', !taskSettings.ocrStrictLatex)}
                       className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
                         taskSettings.ocrStrictLatex ? 'bg-white' : 'bg-neutral-800'
                       }`}
@@ -1009,10 +1069,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       step="0.05"
                       value={taskSettings.similarityThreshold}
                       onChange={(e) =>
-                        setTaskSettings((prev) => ({
-                          ...prev,
-                          similarityThreshold: parseFloat(e.target.value),
-                        }))
+                        updateTaskSetting('similarityThreshold', parseFloat(e.target.value))
                       }
                       className="w-full accent-white cursor-pointer"
                     />
@@ -1030,10 +1087,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       step="5"
                       value={taskSettings.llmTimeoutSeconds}
                       onChange={(e) =>
-                        setTaskSettings((prev) => ({
-                          ...prev,
-                          llmTimeoutSeconds: parseInt(e.target.value, 10),
-                        }))
+                        updateTaskSetting('llmTimeoutSeconds', parseInt(e.target.value, 10))
                       }
                       className="w-full accent-white cursor-pointer"
                     />

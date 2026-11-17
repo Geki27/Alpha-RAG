@@ -53,11 +53,32 @@ export function ensureLibraryDirectories() {
   }
 }
 
+function readLibraryVisibilityPrefs(): { hideExamples: boolean; deletedSeedFiles: Set<string> } {
+  const settingsPath = path.join(ROOT_LIBRARY_DIR, '.aether-settings.json');
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      return {
+        hideExamples: Boolean(parsed?.hideExamples),
+        deletedSeedFiles: new Set(
+          Array.isArray(parsed?.deletedSeedFiles)
+            ? parsed.deletedSeedFiles.filter((f: unknown) => typeof f === 'string')
+            : []
+        ),
+      };
+    }
+  } catch {}
+  return { hideExamples: false, deletedSeedFiles: new Set<string>() };
+}
+
 /**
  * Seed initial textbooks into the physical folders if not already present
  */
-export function seedDefaultLibraryBooks() {
+export function seedDefaultLibraryBooks(forceRestore = false) {
   ensureLibraryDirectories();
+  const { deletedSeedFiles } = forceRestore
+    ? { deletedSeedFiles: new Set<string>() }
+    : readLibraryVisibilityPrefs();
 
   const seedBooks = [
     {
@@ -234,6 +255,9 @@ $$\\sigma = \\frac{W_t}{F \\cdot m} \\cdot K_v \\cdot K_o \\cdot K_m \\cdot \\fr
   ];
 
   for (const book of seedBooks) {
+    if (!forceRestore && deletedSeedFiles.has(book.fileName)) {
+      continue;
+    }
     const discDir = path.join(ROOT_LIBRARY_DIR, book.discipline);
     const pdfPath = path.join(discDir, 'pdf', book.fileName);
     const txtPath = path.join(discDir, 'txt', book.fileName.replace('.pdf', '.txt'));
@@ -306,8 +330,9 @@ function formatFileSize(bytes: number, isDummySeedPlaceholder: boolean, fileName
 /**
  * Scan physical library directory and return all discovered books
  */
-export function getPhysicalLibraryTree(): LibraryBookFile[] {
+export function getPhysicalLibraryTree(options: { includeHiddenExamples?: boolean } = {}): LibraryBookFile[] {
   ensureLibraryDirectories();
+  const { hideExamples } = readLibraryVisibilityPrefs();
   const results: LibraryBookFile[] = [];
 
   const disciplines = fs.readdirSync(ROOT_LIBRARY_DIR);
@@ -365,6 +390,10 @@ export function getPhysicalLibraryTree(): LibraryBookFile[] {
         } catch {}
       }
 
+      if (!options.includeHiddenExamples && hideExamples && isExample) {
+        continue;
+      }
+
       results.push({
         discipline: disc,
         bookId: `book-${disc}-${file}`,
@@ -385,4 +414,29 @@ export function getPhysicalLibraryTree(): LibraryBookFile[] {
   }
 
   return results;
+}
+
+export function deleteBookFromLibrary(discipline: string, fileName: string): { deleted: boolean; isSeed: boolean } {
+  ensureLibraryDirectories();
+  const rootResolved = path.resolve(ROOT_LIBRARY_DIR);
+  const baseName = fileName.replace(/\.pdf$/i, '');
+
+  const pdfPath = path.resolve(rootResolved, discipline, 'pdf', fileName);
+  const txtPath = path.resolve(rootResolved, discipline, 'txt', `${baseName}.txt`);
+  const vectorPath = path.resolve(rootResolved, discipline, 'vector', `${baseName}_vectors.json`);
+
+  if (!pdfPath.startsWith(rootResolved + path.sep)) {
+    throw new Error('Ruta fuera del repositorio de biblioteca.');
+  }
+
+  let deleted = false;
+  for (const target of [pdfPath, txtPath, vectorPath]) {
+    if (target.startsWith(rootResolved + path.sep) && fs.existsSync(target)) {
+      fs.unlinkSync(target);
+      deleted = true;
+    }
+  }
+
+  const isSeed = SEED_BOOK_FILENAMES.has(fileName);
+  return { deleted, isSeed };
 }

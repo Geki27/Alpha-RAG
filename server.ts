@@ -10,6 +10,7 @@ import {
   ensureLibraryDirectories,
   seedDefaultLibraryBooks,
   getPhysicalLibraryTree,
+  deleteBookFromLibrary,
   ROOT_LIBRARY_DIR,
   DEFAULT_DISCIPLINES
 } from './src/server/libraryStorage';
@@ -21,12 +22,22 @@ import {
 } from './src/server/extractionEngine';
 import { executeRagPipeline, executeWebRetrieval } from './src/server/ragPipeline';
 import { detectAvailableModels } from './src/server/modelsDetector';
-import { getPublicSettings, updateRuntimeSettings, resetRuntimeSettings } from './src/server/settingsStore';
+import { getPublicSettings, getRuntimeSettings, updateRuntimeSettings, resetRuntimeSettings } from './src/server/settingsStore';
 import { AVAILABLE_MODELS } from './src/types/models';
 
+function readCliArg(flag: string): string | undefined {
+  const idx = process.argv.indexOf(flag);
+  if (idx !== -1 && idx + 1 < process.argv.length) {
+    return process.argv[idx + 1];
+  }
+  const eqPrefix = `${flag}=`;
+  const eqArg = process.argv.find((a) => a.startsWith(eqPrefix));
+  return eqArg ? eqArg.slice(eqPrefix.length) : undefined;
+}
+
 const app = express();
-const PORT = Number(process.env.APP_PORT) || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
+const PORT = Number(readCliArg('--port') || process.env.APP_PORT) || 3000;
+const HOST = readCliArg('--host') || process.env.HOST || '0.0.0.0';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // Disable server signature and enable fast gzip compression
@@ -173,8 +184,12 @@ app.get('/api/settings', (_req, res) => {
 
 app.put('/api/settings', async (req, res) => {
   try {
-    const updated = updateRuntimeSettings(req.body || {});
-    const detection = await detectAvailableModels().catch(() => null);
+    const body = req.body || {};
+    const updated = updateRuntimeSettings(body);
+    const shouldDetectModels = Boolean(body.apiKeys || body.detectModels);
+    const detection = shouldDetectModels
+      ? await detectAvailableModels().catch(() => null)
+      : null;
     res.json({
       success: true,
       ...updated,
@@ -207,9 +222,39 @@ const upload = multer({
 app.get('/api/library/books', (_req, res) => {
   try {
     const books = getPhysicalLibraryTree();
-    res.json({ success: true, count: books.length, books });
+    const { hideExamples } = getRuntimeSettings();
+    res.json({ success: true, count: books.length, hideExamples, books });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 1b. Delete a book from disk and remember seed deletion across restarts
+app.delete('/api/library/book/:discipline/:filename', (req, res) => {
+  try {
+    const { discipline, filename } = req.params;
+    const { deleted, isSeed } = deleteBookFromLibrary(discipline, filename);
+    if (isSeed) {
+      const current = getRuntimeSettings();
+      const nextDeleted = Array.from(new Set([...current.deletedSeedFiles, filename]));
+      updateRuntimeSettings({ settings: { deletedSeedFiles: nextDeleted } });
+    }
+    const books = getPhysicalLibraryTree();
+    res.json({ success: true, deleted, count: books.length, books });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Error eliminando libro' });
+  }
+});
+
+// 1c. Restore default example books
+app.post('/api/library/examples/restore', (_req, res) => {
+  try {
+    updateRuntimeSettings({ settings: { hideExamples: false, deletedSeedFiles: [] } });
+    seedDefaultLibraryBooks(true);
+    const books = getPhysicalLibraryTree();
+    res.json({ success: true, hideExamples: false, count: books.length, books });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Error restaurando ejemplos' });
   }
 });
 
@@ -354,21 +399,39 @@ function getLocalNetworkUrls(port: number): string[] {
 }
 
 async function startServer() {
-  try {
-    const repaired = await repairOutdatedLibraryExtractions();
-    if (repaired > 0) {
-      console.log(`[Alpha RAG Server] Reparados ${repaired} documentos PDF en /libreria con extracción real.`);
-    }
-  } catch (err) {
-    console.warn('[Alpha RAG Server] Error durante verificación inicial de /libreria:', err);
-  }
+  const server = http.createServer(app);
+  // Generous timeouts for local RAG synthesis and large PDF uploads
+  server.requestTimeout = 180_000;
+  server.keepAliveTimeout = 61_000;
+  server.headersTimeout = 65_000;
 
   if (!IS_PRODUCTION) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true }
+    const disableHmr =
+      process.env.DISABLE_HMR === 'true' || Boolean(process.env.CONTROL_PLANE_PORT);
+    const vitePromise = import('vite').then(({ createServer: createViteServer }) =>
+      createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: disableHmr ? false : { server },
+          ws: disableHmr ? false : undefined,
+          watch: disableHmr ? null : undefined,
+        },
+      })
+    );
+
+    // Log Vite startup error if it occurs
+    vitePromise.catch((err) => {
+      console.error('[Alpha RAG Server] Error iniciando Vite middleware:', err);
     });
-    app.use(vite.middlewares);
+
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await vitePromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+    });
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     if (!fs.existsSync(distPath)) {
@@ -402,12 +465,6 @@ async function startServer() {
     });
   }
 
-  const server = http.createServer(app);
-  // Generous timeouts for local RAG synthesis and large PDF uploads
-  server.requestTimeout = 180_000;
-  server.keepAliveTimeout = 61_000;
-  server.headersTimeout = 65_000;
-
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       console.error(`\n[Alpha RAG Server] El puerto ${PORT} ya está en uso en localhost.`);
@@ -417,7 +474,19 @@ async function startServer() {
     throw err;
   });
 
+  // Bind port immediately without blocking on PDF repair or Vite dep optimization
   server.listen(PORT, HOST, () => {
+    setImmediate(() => {
+      repairOutdatedLibraryExtractions()
+        .then((repaired) => {
+          if (repaired > 0) {
+            console.log(`[Alpha RAG Server] Reparados ${repaired} documentos PDF en /libreria con extracción real.`);
+          }
+        })
+        .catch((err) => {
+          console.warn('[Alpha RAG Server] Error durante verificación inicial de /libreria:', err);
+        });
+    });
     const modeLabel = IS_PRODUCTION
       ? 'Production Optimized (dist/ + gzip + cache inmutable)'
       : 'Development (Vite Middleware)';

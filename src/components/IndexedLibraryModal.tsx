@@ -34,6 +34,8 @@ interface IndexedLibraryModalProps {
   documents: DocumentSource[];
   setDocuments: React.Dispatch<React.SetStateAction<DocumentSource[]>>;
   onRefreshBooks?: () => Promise<void> | void;
+  hideExamples?: boolean;
+  onToggleHideExamples?: (nextHide: boolean) => Promise<void> | void;
   onCardHoverStart?: () => void;
   onCardHoverEnd?: () => void;
 }
@@ -55,6 +57,8 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
   documents,
   setDocuments,
   onRefreshBooks,
+  hideExamples: hideExamplesProp,
+  onToggleHideExamples,
   onCardHoverStart,
   onCardHoverEnd,
 }) => {
@@ -63,8 +67,11 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
   const [activeDiscipline, setActiveDiscipline] = useState<string>('ALL');
   const [uploadDiscipline, setUploadDiscipline] = useState<string>('Estatica');
   
-  // Example books visibility toggle
-  const [hideExamples, setHideExamples] = useState(false);
+  // Example books visibility state (synced with server settings)
+  const [internalHideExamples, setInternalHideExamples] = useState(false);
+  const [isTogglingExamples, setIsTogglingExamples] = useState(false);
+  const [deletingBookId, setDeletingBookId] = useState<string | null>(null);
+  const hideExamples = typeof hideExamplesProp === 'boolean' ? hideExamplesProp : internalHideExamples;
 
   // Chunking settings panel toggle
   const [showChunkingSettings, setShowChunkingSettings] = useState(false);
@@ -100,6 +107,9 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
       const response = await fetch('/api/library/books');
       if (response.ok) {
         const data = await response.json();
+        if (typeof data.hideExamples === 'boolean') {
+          setInternalHideExamples(data.hideExamples);
+        }
         if (data.success && Array.isArray(data.books)) {
           const mappedDocs: DocumentSource[] = data.books.map((b: any) => ({
             id: b.bookId,
@@ -134,6 +144,61 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
       setUploadError(err?.message || 'No se pudieron cargar los libros desde el servidor.');
     }
   }, [setDocuments, onRefreshBooks]);
+
+  const handleToggleExamples = async (nextHide: boolean) => {
+    setIsTogglingExamples(true);
+    setUploadError(null);
+    setInternalHideExamples(nextHide);
+    try {
+      if (onToggleHideExamples) {
+        await onToggleHideExamples(nextHide);
+      } else {
+        if (nextHide) {
+          await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            keepalive: true,
+            body: JSON.stringify({ settings: { hideExamples: true } }),
+          });
+        } else {
+          await fetch('/api/library/examples/restore', {
+            method: 'POST',
+            keepalive: true,
+          });
+        }
+        await fetchPhysicalLibraryBooks();
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Error al actualizar los libros de ejemplo.');
+    } finally {
+      setIsTogglingExamples(false);
+    }
+  };
+
+  const handleDeleteBook = async (doc: DocumentSource) => {
+    const disc = doc.discipline || 'Estatica';
+    const fileName = doc.fileName || doc.name;
+    setDeletingBookId(doc.id);
+    setUploadError(null);
+    try {
+      const res = await fetch(
+        `/api/library/book/${encodeURIComponent(disc)}/${encodeURIComponent(fileName)}`,
+        { method: 'DELETE', keepalive: true }
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'No se pudo eliminar el libro del disco.');
+      }
+      if (selectedBookForData?.id === doc.id) {
+        setSelectedBookForData(null);
+      }
+      await fetchPhysicalLibraryBooks();
+    } catch (err: any) {
+      setUploadError(err?.message || 'Error al eliminar el libro.');
+    } finally {
+      setDeletingBookId(null);
+    }
+  };
 
   // Load books on mount & when modal opens
   useEffect(() => {
@@ -392,8 +457,9 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
             {/* Toggle Quitar / Restaurar Ejemplos */}
             <button
               type="button"
-              onClick={() => setHideExamples(prev => !prev)}
-              className={`px-3 py-1.5 rounded-full text-xs font-sans transition-all duration-150 cursor-pointer border ${
+              disabled={isTogglingExamples}
+              onClick={() => handleToggleExamples(!hideExamples)}
+              className={`px-3 py-1.5 rounded-full text-xs font-sans transition-all duration-150 cursor-pointer border disabled:opacity-50 ${
                 hideExamples
                   ? 'bg-white/10 text-white border-white/30'
                   : 'bg-white/[0.03] hover:bg-white/[0.08] text-neutral-300 hover:text-white border-white/15'
@@ -1067,8 +1133,9 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
                   {hideExamples && (
                     <button
                       type="button"
-                      onClick={() => setHideExamples(false)}
-                      className="px-3 py-1.5 rounded-xl bg-white/[0.08] hover:bg-white/15 text-xs text-white border border-white/15 cursor-pointer font-sans"
+                      disabled={isTogglingExamples}
+                      onClick={() => handleToggleExamples(false)}
+                      className="px-3 py-1.5 rounded-xl bg-white/[0.08] hover:bg-white/15 text-xs text-white border border-white/15 cursor-pointer font-sans disabled:opacity-50"
                     >
                       Restaurar libros de ejemplo
                     </button>
@@ -1115,7 +1182,7 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Right Column: [📖 Datos 🟡] Button */}
+                    {/* Right Column: [📖 Datos 🟡] + Delete Button */}
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                       <button
                         type="button"
@@ -1126,6 +1193,17 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
                         <BookOpen className="w-3.5 h-3.5 text-amber-300" />
                         <span>Datos</span>
                         <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)]" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={deletingBookId === doc.id}
+                        onClick={() => handleDeleteBook(doc)}
+                        className="p-2 rounded-xl border border-white/10 hover:border-red-400/50 bg-white/[0.03] hover:bg-red-500/15 text-neutral-400 hover:text-red-200 transition-colors cursor-pointer disabled:opacity-40"
+                        title={`Eliminar ${doc.title || doc.name} del almacenamiento local`}
+                        aria-label={`Eliminar ${doc.title || doc.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

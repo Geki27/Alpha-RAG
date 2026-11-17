@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
-import { extractText } from 'unpdf';
 import { ROOT_LIBRARY_DIR, ensureLibraryDirectories, SEED_BOOK_FILENAMES, getPhysicalLibraryTree, LibraryBookFile } from './libraryStorage';
 import { getRuntimeSettings } from './settingsStore';
 
@@ -171,6 +170,7 @@ export async function extractPdfToLibraryFiles(
   let pageTexts: string[] = [];
 
   try {
+    const { extractText } = await import('unpdf');
     const extracted = await extractText(new Uint8Array(pdfBuffer), { mergePages: false });
     totalPages = extracted.totalPages || (Array.isArray(extracted.text) ? extracted.text.length : 1);
     pageTexts = Array.isArray(extracted.text) ? extracted.text : [String(extracted.text || '')];

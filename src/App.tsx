@@ -33,7 +33,44 @@ const IndexedLibraryModal = lazy(() =>
 );
 import { INITIAL_SESSIONS } from './data/mockRagData';
 import { ModelDefinition, EffortLevel, AVAILABLE_MODELS } from './types/models';
+import { RuntimeTaskSettings } from './types/settings';
 import { SearchScope } from './components/AttachmentMenu';
+
+const UI_PREFS_STORAGE_KEY = 'aether_ui_prefs_v1';
+
+interface StoredUiPrefs {
+  particleSpeed?: number;
+  pointSize?: number;
+  vignetteDarkness?: number;
+  lockedIntrospect?: boolean;
+  thinkingEnabled?: boolean;
+  effortLevel?: EffortLevel;
+  searchScope?: SearchScope;
+  chatModel?: string;
+  topK?: number;
+  temperature?: number;
+  rerankEnabled?: boolean;
+  hideExamples?: boolean;
+}
+
+function readStoredUiPrefs(): StoredUiPrefs {
+  try {
+    const raw = localStorage.getItem(UI_PREFS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredUiPrefs(prefs: StoredUiPrefs): void {
+  try {
+    localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 export default function App() {
   // Navigation State
@@ -54,12 +91,18 @@ export default function App() {
     return INITIAL_SESSIONS;
   });
 
+  const initialUiPrefsRef = useRef<StoredUiPrefs | null>(null);
+  if (initialUiPrefsRef.current === null) {
+    initialUiPrefsRef.current = readStoredUiPrefs();
+  }
+  const initialUiPrefs = initialUiPrefsRef.current;
+
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
     try {
       const savedId = localStorage.getItem('aether_rag_active_session_id_v1');
-      if (savedId && INITIAL_SESSIONS.some(s => s.id === savedId)) return savedId;
+      if (savedId && sessions.some(s => s.id === savedId)) return savedId;
     } catch (e) {}
-    return INITIAL_SESSIONS[0]?.id || 'session-1';
+    return sessions[0]?.id || INITIAL_SESSIONS[0]?.id || 'session-1';
   });
 
   // Save sessions to localStorage
@@ -77,75 +120,218 @@ export default function App() {
 
   // Introspect State (cloned from skal-ventures-template)
   // When introspect is active or card is hovered, particles illuminate and sparkle
-  const [lockedIntrospect, setLockedIntrospect] = useState<boolean>(false);
+  const [lockedIntrospect, setLockedIntrospect] = useState<boolean>(
+    typeof initialUiPrefs.lockedIntrospect === 'boolean' ? initialUiPrefs.lockedIntrospect : false
+  );
   const [hoverIntrospect, setHoverIntrospect] = useState<boolean>(false);
 
   // Background WebGL Tunables
-  const [particleSpeed, setParticleSpeed] = useState<number>(1.0);
-  const [pointSize, setPointSize] = useState<number>(10.0);
-  const [vignetteDarkness, setVignetteDarkness] = useState<number>(1.5);
+  const [particleSpeed, setParticleSpeed] = useState<number>(
+    typeof initialUiPrefs.particleSpeed === 'number' ? initialUiPrefs.particleSpeed : 1.0
+  );
+  const [pointSize, setPointSize] = useState<number>(
+    typeof initialUiPrefs.pointSize === 'number' ? initialUiPrefs.pointSize : 10.0
+  );
+  const [vignetteDarkness, setVignetteDarkness] = useState<number>(
+    typeof initialUiPrefs.vignetteDarkness === 'number' ? initialUiPrefs.vignetteDarkness : 1.5
+  );
   const [aperture] = useState<number>(1.79);
   const [focus] = useState<number>(3.8);
 
   // RAG Engine Tunables & Dynamic Models Auto-detection
   const [availableModels, setAvailableModels] = useState<ModelDefinition[]>(AVAILABLE_MODELS);
-  const [selectedModel, setSelectedModel] = useState<ModelDefinition>(() => AVAILABLE_MODELS[0]);
-  const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(true);
-  const [effortLevel, setEffortLevel] = useState<EffortLevel>('medium');
-  const [searchScope, setSearchScope] = useState<SearchScope>('local');
-  const [ragModel, setRagModel] = useState<string>('gemini-2.5-flash');
-  const [topK, setTopK] = useState<number>(5);
-  const [temperature, setTemperature] = useState<number>(0.1);
-  const [rerankEnabled, setRerankEnabled] = useState<boolean>(true);
+  const [selectedModel, setSelectedModel] = useState<ModelDefinition>(() => {
+    const savedModelId = initialUiPrefs.chatModel;
+    return AVAILABLE_MODELS.find(m => m.id === savedModelId) || AVAILABLE_MODELS[0];
+  });
+  const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(
+    typeof initialUiPrefs.thinkingEnabled === 'boolean' ? initialUiPrefs.thinkingEnabled : true
+  );
+  const [effortLevel, setEffortLevel] = useState<EffortLevel>(
+    initialUiPrefs.effortLevel || 'medium'
+  );
+  const [searchScope, setSearchScope] = useState<SearchScope>(
+    initialUiPrefs.searchScope || 'local'
+  );
+  const [ragModel, setRagModel] = useState<string>(initialUiPrefs.chatModel || 'gemini-2.5-flash');
+  const [topK, setTopK] = useState<number>(
+    typeof initialUiPrefs.topK === 'number' ? initialUiPrefs.topK : 5
+  );
+  const [temperature, setTemperature] = useState<number>(
+    typeof initialUiPrefs.temperature === 'number' ? initialUiPrefs.temperature : 0.1
+  );
+  const [rerankEnabled, setRerankEnabled] = useState<boolean>(
+    typeof initialUiPrefs.rerankEnabled === 'boolean' ? initialUiPrefs.rerankEnabled : true
+  );
+  const [hideExamples, setHideExamples] = useState<boolean>(
+    typeof initialUiPrefs.hideExamples === 'boolean' ? initialUiPrefs.hideExamples : false
+  );
 
   const hasHydratedSettingsRef = useRef<boolean>(false);
+  const dirtyFieldsRef = useRef<Set<keyof RuntimeTaskSettings>>(new Set());
+  const ragModelRef = useRef<string>(ragModel);
+  ragModelRef.current = ragModel;
 
-  // Auto-detect models & load persisted server settings on app load
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/models').then(res => res.json()).catch(() => null),
-      fetch('/api/settings').then(res => res.json()).catch(() => null),
-    ]).then(([modelsData, settingsData]) => {
-      const modelsList: ModelDefinition[] =
-        modelsData && Array.isArray(modelsData.models) && modelsData.models.length > 0
-          ? modelsData.models
-          : AVAILABLE_MODELS;
-
-      setAvailableModels(modelsList);
-
-      if (settingsData?.success && settingsData.settings) {
-        const s = settingsData.settings;
-        if (typeof s.topK === 'number') setTopK(s.topK);
-        if (typeof s.temperature === 'number') setTemperature(s.temperature);
-        if (typeof s.rerankEnabled === 'boolean') setRerankEnabled(s.rerankEnabled);
-        if (typeof s.particleSpeed === 'number') setParticleSpeed(s.particleSpeed);
-        if (typeof s.pointSize === 'number') setPointSize(s.pointSize);
-        if (typeof s.vignetteDarkness === 'number') setVignetteDarkness(s.vignetteDarkness);
-        if (typeof s.lockedIntrospect === 'boolean') setLockedIntrospect(s.lockedIntrospect);
-        if (typeof s.thinkingEnabled === 'boolean') setThinkingEnabled(s.thinkingEnabled);
-        if (typeof s.effortLevel === 'string') setEffortLevel(s.effortLevel as EffortLevel);
-        if (typeof s.searchScope === 'string') setSearchScope(s.searchScope as SearchScope);
-        if (typeof s.chatModel === 'string' && s.chatModel) {
-          setRagModel(s.chatModel);
-          const matched = modelsList.find(m => m.id === s.chatModel);
-          if (matched) setSelectedModel(matched);
-        }
-      }
-
-      // Enable auto-persistence only after initial server hydration completes
-      setTimeout(() => {
-        hasHydratedSettingsRef.current = true;
-      }, 0);
-    });
+  const markSettingDirty = useCallback((...fields: Array<keyof RuntimeTaskSettings>) => {
+    fields.forEach((f) => dirtyFieldsRef.current.add(f));
   }, []);
+
+  const handleSetParticleSpeed = useCallback((v: number) => {
+    markSettingDirty('particleSpeed');
+    setParticleSpeed(v);
+  }, [markSettingDirty]);
+
+  const handleSetPointSize = useCallback((v: number) => {
+    markSettingDirty('pointSize');
+    setPointSize(v);
+  }, [markSettingDirty]);
+
+  const handleSetVignetteDarkness = useCallback((v: number) => {
+    markSettingDirty('vignetteDarkness');
+    setVignetteDarkness(v);
+  }, [markSettingDirty]);
+
+  const handleSetTopK = useCallback((v: number) => {
+    markSettingDirty('topK');
+    setTopK(v);
+  }, [markSettingDirty]);
+
+  const handleSetTemperature = useCallback((v: number) => {
+    markSettingDirty('temperature');
+    setTemperature(v);
+  }, [markSettingDirty]);
+
+  const handleSetRerankEnabled = useCallback((v: boolean) => {
+    markSettingDirty('rerankEnabled');
+    setRerankEnabled(v);
+  }, [markSettingDirty]);
+
+  const handleSetThinkingEnabled = useCallback((v: React.SetStateAction<boolean>) => {
+    markSettingDirty('thinkingEnabled');
+    setThinkingEnabled(v);
+  }, [markSettingDirty]);
+
+  const handleSetEffortLevel = useCallback((v: EffortLevel) => {
+    markSettingDirty('effortLevel');
+    setEffortLevel(v);
+  }, [markSettingDirty]);
+
+  const handleSetSearchScope = useCallback((v: SearchScope) => {
+    markSettingDirty('searchScope');
+    setSearchScope(v);
+  }, [markSettingDirty]);
+
+  const handleSetSelectedModel = useCallback((model: ModelDefinition) => {
+    markSettingDirty('chatModel');
+    setSelectedModel(model);
+    setRagModel(model.id);
+  }, [markSettingDirty]);
+
+  // Hydrate persisted server settings immediately (fast local disk read, decoupled from external /api/models)
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/api/settings')
+      .then((res) => res.json())
+      .then((settingsData) => {
+        if (cancelled) return;
+        const dirty = dirtyFieldsRef.current;
+
+        if (settingsData?.success && settingsData.settings) {
+          const s = settingsData.settings as RuntimeTaskSettings;
+          if (!dirty.has('topK') && typeof s.topK === 'number') setTopK(s.topK);
+          if (!dirty.has('temperature') && typeof s.temperature === 'number') setTemperature(s.temperature);
+          if (!dirty.has('rerankEnabled') && typeof s.rerankEnabled === 'boolean') setRerankEnabled(s.rerankEnabled);
+          if (!dirty.has('particleSpeed') && typeof s.particleSpeed === 'number') setParticleSpeed(s.particleSpeed);
+          if (!dirty.has('pointSize') && typeof s.pointSize === 'number') setPointSize(s.pointSize);
+          if (!dirty.has('vignetteDarkness') && typeof s.vignetteDarkness === 'number') setVignetteDarkness(s.vignetteDarkness);
+          if (!dirty.has('lockedIntrospect') && typeof s.lockedIntrospect === 'boolean') setLockedIntrospect(s.lockedIntrospect);
+          if (!dirty.has('thinkingEnabled') && typeof s.thinkingEnabled === 'boolean') setThinkingEnabled(s.thinkingEnabled);
+          if (!dirty.has('effortLevel') && typeof s.effortLevel === 'string') setEffortLevel(s.effortLevel as EffortLevel);
+          if (!dirty.has('searchScope') && typeof s.searchScope === 'string') setSearchScope(s.searchScope as SearchScope);
+          if (!dirty.has('hideExamples') && typeof s.hideExamples === 'boolean') setHideExamples(s.hideExamples);
+          if (!dirty.has('chatModel') && typeof s.chatModel === 'string' && s.chatModel) {
+            setRagModel(s.chatModel);
+            setAvailableModels((currentModels) => {
+              const matched = currentModels.find((m) => m.id === s.chatModel);
+              if (matched) setSelectedModel(matched);
+              return currentModels;
+            });
+          }
+        }
+
+        hasHydratedSettingsRef.current = true;
+      })
+      .catch(() => {
+        if (!cancelled) {
+          hasHydratedSettingsRef.current = true;
+        }
+      });
+
+    // Auto-detect models independently without blocking settings hydration
+    fetch('/api/models')
+      .then((res) => res.json())
+      .then((modelsData) => {
+        if (cancelled) return;
+        const modelsList: ModelDefinition[] =
+          modelsData && Array.isArray(modelsData.models) && modelsData.models.length > 0
+            ? modelsData.models
+            : AVAILABLE_MODELS;
+
+        setAvailableModels(modelsList);
+        const currentChatId = ragModelRef.current;
+        const matched = modelsList.find((m) => m.id === currentChatId);
+        if (matched) {
+          setSelectedModel(matched);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Mirror UI preferences synchronously to localStorage on every change
+  useEffect(() => {
+    writeStoredUiPrefs({
+      chatModel: selectedModel.id,
+      topK,
+      temperature,
+      rerankEnabled,
+      particleSpeed,
+      pointSize,
+      vignetteDarkness,
+      lockedIntrospect,
+      thinkingEnabled,
+      effortLevel,
+      searchScope,
+      hideExamples,
+    });
+  }, [
+    selectedModel.id,
+    topK,
+    temperature,
+    rerankEnabled,
+    particleSpeed,
+    pointSize,
+    vignetteDarkness,
+    lockedIntrospect,
+    thinkingEnabled,
+    effortLevel,
+    searchScope,
+    hideExamples,
+  ]);
 
   // Auto-persist workspace, RAG & WebGL background settings to server disk across restarts
   useEffect(() => {
-    if (!hasHydratedSettingsRef.current) return;
+    if (!hasHydratedSettingsRef.current && dirtyFieldsRef.current.size === 0) return;
+
     const timer = setTimeout(() => {
       fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
         body: JSON.stringify({
           settings: {
             chatModel: selectedModel.id,
@@ -162,7 +348,7 @@ export default function App() {
           },
         }),
       }).catch(() => {});
-    }, 350);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [
@@ -202,6 +388,9 @@ export default function App() {
       const response = await fetch('/api/library/books');
       if (!response.ok) return;
       const data = await response.json();
+      if (typeof data.hideExamples === 'boolean' && !dirtyFieldsRef.current.has('hideExamples')) {
+        setHideExamples(data.hideExamples);
+      }
       if (data.success && Array.isArray(data.books)) {
         const mappedDocs: DocumentSource[] = data.books.map((b: any) => ({
           id: b.bookId,
@@ -230,6 +419,29 @@ export default function App() {
       console.error('Error cargando biblioteca física desde /api/library/books:', err);
     }
   }, []);
+
+  const handleToggleHideExamples = useCallback(async (nextHide: boolean) => {
+    markSettingDirty('hideExamples');
+    setHideExamples(nextHide);
+    try {
+      if (nextHide) {
+        await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ settings: { hideExamples: true } }),
+        });
+      } else {
+        await fetch('/api/library/examples/restore', {
+          method: 'POST',
+          keepalive: true,
+        });
+      }
+    } catch (err) {
+      console.error('Error actualizando visibilidad de ejemplos:', err);
+    }
+    await refreshLibraryBooks();
+  }, [markSettingDirty, refreshLibraryBooks]);
 
   useEffect(() => {
     refreshLibraryBooks();
@@ -450,14 +662,26 @@ export default function App() {
     setIsPdfModalOpen(true);
   };
 
-  const handleResetDefaults = () => {
+  const handleResetDefaults = useCallback(() => {
+    dirtyFieldsRef.current.clear();
     setParticleSpeed(1.0);
     setPointSize(10.0);
     setVignetteDarkness(1.5);
+    setLockedIntrospect(false);
+    setThinkingEnabled(true);
+    setEffortLevel('medium');
+    setSearchScope('local');
     setTopK(5);
     setTemperature(0.1);
     setRerankEnabled(true);
-  };
+    setHideExamples(false);
+    const defaultModel = availableModels.find((m) => m.id === 'gemini-2.5-flash') || AVAILABLE_MODELS[0];
+    setSelectedModel(defaultModel);
+    setRagModel(defaultModel.id);
+    try {
+      localStorage.removeItem(UI_PREFS_STORAGE_KEY);
+    } catch {}
+  }, [availableModels]);
 
   return (
     <div className="relative min-h-screen w-full bg-black text-white selection:bg-white selection:text-black">
@@ -479,7 +703,10 @@ export default function App() {
         {/* Floating Minimal Controls (Settings & Introspect) */}
         <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
           <button
-            onClick={() => setLockedIntrospect(prev => !prev)}
+            onClick={() => {
+              markSettingDirty('lockedIntrospect');
+              setLockedIntrospect(prev => !prev);
+            }}
             onMouseEnter={handleCardHoverStart}
             onMouseLeave={handleCardHoverEnd}
             className={`p-2.5 rounded-xl border text-xs font-mono transition-all duration-300 backdrop-blur-xl cursor-pointer ${
@@ -519,13 +746,13 @@ export default function App() {
               isSidebarOpen={isSidebarOpen}
               documents={documents}
               selectedModel={selectedModel}
-              setSelectedModel={setSelectedModel}
+              setSelectedModel={handleSetSelectedModel}
               thinkingEnabled={thinkingEnabled}
-              setThinkingEnabled={setThinkingEnabled}
+              setThinkingEnabled={handleSetThinkingEnabled}
               effortLevel={effortLevel}
-              setEffortLevel={setEffortLevel}
+              setEffortLevel={handleSetEffortLevel}
               searchScope={searchScope}
-              setSearchScope={setSearchScope}
+              setSearchScope={handleSetSearchScope}
               availableModels={availableModels}
               setAvailableModels={setAvailableModels}
             />
@@ -617,22 +844,23 @@ export default function App() {
             availableModels={availableModels}
             setAvailableModels={setAvailableModels}
             selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
+            setSelectedModel={handleSetSelectedModel}
             ragModel={ragModel}
             setRagModel={setRagModel}
             topK={topK}
-            setTopK={setTopK}
+            setTopK={handleSetTopK}
             temperature={temperature}
-            setTemperature={setTemperature}
+            setTemperature={handleSetTemperature}
             rerankEnabled={rerankEnabled}
-            setRerankEnabled={setRerankEnabled}
+            setRerankEnabled={handleSetRerankEnabled}
             particleSpeed={particleSpeed}
-            setParticleSpeed={setParticleSpeed}
+            setParticleSpeed={handleSetParticleSpeed}
             pointSize={pointSize}
-            setPointSize={setPointSize}
+            setPointSize={handleSetPointSize}
             vignetteDarkness={vignetteDarkness}
-            setVignetteDarkness={setVignetteDarkness}
+            setVignetteDarkness={handleSetVignetteDarkness}
             onResetDefaults={handleResetDefaults}
+            onRefreshBooks={refreshLibraryBooks}
           />
         )}
 
@@ -645,6 +873,8 @@ export default function App() {
             documents={documents}
             setDocuments={setDocuments}
             onRefreshBooks={refreshLibraryBooks}
+            hideExamples={hideExamples}
+            onToggleHideExamples={handleToggleHideExamples}
             onCardHoverStart={handleCardHoverStart}
             onCardHoverEnd={handleCardHoverEnd}
           />

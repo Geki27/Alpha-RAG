@@ -56,6 +56,10 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
     thinkingEnabled: typeof raw.thinkingEnabled === 'boolean' ? raw.thinkingEnabled : base.thinkingEnabled,
     effortLevel: effort,
     searchScope: scope,
+    hideExamples: typeof raw.hideExamples === 'boolean' ? raw.hideExamples : base.hideExamples,
+    deletedSeedFiles: Array.isArray(raw.deletedSeedFiles)
+      ? raw.deletedSeedFiles.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+      : base.deletedSeedFiles,
   };
 }
 
