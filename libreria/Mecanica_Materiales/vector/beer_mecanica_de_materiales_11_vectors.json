@@ -1,0 +1,42 @@
+{
+  "discipline": "Mecanica_Materiales",
+  "bookTitle": "Mecánica de Materiales",
+  "fileName": "beer_mecanica_de_materiales_11.pdf",
+  "model": "text-embedding-004 (768-D)",
+  "chunksCount": 1980,
+  "extractedAt": "2026-11-10T01:04:52.055Z",
+  "chunks": [
+    {
+      "chunkIndex": 1,
+      "section": "Principios y Fundamentos",
+      "tokenCount": 86,
+      "vector": [
+        -0.3164,
+        0.9447,
+        0.0465,
+        -0.0576,
+        0.0259,
+        -0.3218,
+        -0.7579,
+        0.5175
+      ],
+      "textExcerpt": "# MECÁNICA DE MATERIALES (11ma Edición)\n**Autores:** Ferdinand P. Beer, E. Russell Johnston Jr., John T. DeWolf\n**Disciplina:** Resistencia y Deformación de Materiales\n\n---\n\n## CAPÍTULO 7: TRANSFORMACIONES DE ESFUERZO Y DEFORMACIÓN\n\n### Cír..."
+    },
+    {
+      "chunkIndex": 2,
+      "section": "Formulaciones y Leyes Matemáticas",
+      "tokenCount": 92,
+      "vector": [
+        -0.6396,
+        0.4214,
+        0.8909,
+        0.3886,
+        -0.4455,
+        0.7597,
+        -0.7988,
+        0.1647
+      ],
+      "textExcerpt": "ulo de Mohr para Esfuerzo Plano\nLas componentes de esfuerzo en un elemento inclinado un ángulo $\\theta$ respecto al eje $x$ son:\n\n$$\\sigma_{x'} = \\frac{\\sigma_x + \\sigma_y}{2} + \\frac{\\sigma_x - \\sigma_y}{2} \\cos(2\\theta) + \\tau_{xy} \\sin(2\\theta)$$\n$$\\tau_{x'y'} = -\\frac{\\sigma..."
+    }
+  ]
+}

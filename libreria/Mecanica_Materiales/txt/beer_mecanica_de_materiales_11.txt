@@ -1,0 +1,20 @@
+# MECÁNICA DE MATERIALES (11ma Edición)
+**Autores:** Ferdinand P. Beer, E. Russell Johnston Jr., John T. DeWolf
+**Disciplina:** Resistencia y Deformación de Materiales
+
+---
+
+## CAPÍTULO 7: TRANSFORMACIONES DE ESFUERZO Y DEFORMACIÓN
+
+### Círculo de Mohr para Esfuerzo Plano
+Las componentes de esfuerzo en un elemento inclinado un ángulo $\theta$ respecto al eje $x$ son:
+
+$$\sigma_{x'} = \frac{\sigma_x + \sigma_y}{2} + \frac{\sigma_x - \sigma_y}{2} \cos(2\theta) + \tau_{xy} \sin(2\theta)$$
+$$\tau_{x'y'} = -\frac{\sigma_x - \sigma_y}{2} \sin(2\theta) + \tau_{xy} \cos(2\theta)$$
+
+### Teoría de la Máxima Energía de Distorsión (Von Mises)
+El esfuerzo efectivo de Von Mises $\sigma_v$ para esfuerzo plano biaxial es:
+
+$$\sigma_v = \sqrt{\sigma_1^2 - \sigma_1 \sigma_2 + \sigma_2^2}$$
+
+La condición de falla o fluencia plástica se cumple cuando $\sigma_v \ge S_y$.

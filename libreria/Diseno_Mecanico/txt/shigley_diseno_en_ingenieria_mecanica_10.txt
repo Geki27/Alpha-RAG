@@ -1,0 +1,23 @@
+# DISEÑO EN INGENIERÍA MECÁNICA DE SHIGLEY (10ma Edición)
+**Autores:** Richard G. Budynas, J. Keith Nisbett · McGraw-Hill Education
+**Disciplina:** Diseño Mecánico y Fatiga de Materiales
+
+---
+
+## CAPÍTULO 6: FALLA POR FATIGA RESULTANTE DE CARGAS VARIABLES
+
+Bajo esfuerzos cíclicos fluctuantes, la amplitud del esfuerzo alternante $\sigma_a$ y el esfuerzo medio $\sigma_m$ se definen como:
+
+$$\sigma_a = \left| \frac{\sigma_{\max} - \sigma_{\min}}{2} \right|$$
+$$\sigma_m = \frac{\sigma_{\max} + \sigma_{\min}}{2}$$
+
+### Criterio de Falla de Goodman Modificado
+El factor de seguridad $n$ contra la falla por fatiga infinita según la recta de Goodman relaciona el límite de fatiga corregido $S_e$ y la resistencia a la tensión $S_{ut}$:
+
+$$\frac{\sigma_a}{S_e} + \frac{\sigma_m}{S_{ut}} = \frac{1}{n}$$
+
+### Criterio de Soderberg (Conservador para Fluencia)
+$$\frac{\sigma_a}{S_e} + \frac{\sigma_m}{S_y} = \frac{1}{n}$$
+
+Donde los factores de modificación de Marin para el límite de resistencia a la fatiga son:
+$$S_e = k_a \cdot k_b \cdot k_c \cdot k_d \cdot k_e \cdot S_e'$$

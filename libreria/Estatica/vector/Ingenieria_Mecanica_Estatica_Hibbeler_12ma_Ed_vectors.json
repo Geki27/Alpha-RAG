@@ -1,0 +1,42 @@
+{
+  "discipline": "Estatica",
+  "bookTitle": "Ingenieria Mecanica Estatica - R C Hibbeler 12ma Ed",
+  "fileName": "Ingenieria_Mecanica_Estatica_Hibbeler_12ma_Ed.pdf",
+  "model": "text-embedding-004 (768-D)",
+  "chunksCount": 1840,
+  "extractedAt": "2026-11-10T01:04:52.054Z",
+  "chunks": [
+    {
+      "chunkIndex": 1,
+      "section": "Principios y Fundamentos",
+      "tokenCount": 86,
+      "vector": [
+        -0.0806,
+        -0.8219,
+        0.9504,
+        0.8576,
+        -0.2467,
+        0.9578,
+        0.5271,
+        0.2602
+      ],
+      "textExcerpt": "# INGENIERÍA MECÁNICA: ESTÁTICA (12ma Edición)\n**Autor:** R. C. Hibbeler · Prentice Hall\n**Disciplina:** Estática y Análisis Estructural\n\n---\n\n## CAPÍTULO 1: PRINCIPIOS GENERALES\nLa estática es la rama de la mecánica que estudia los cuerpos..."
+    },
+    {
+      "chunkIndex": 2,
+      "section": "Formulaciones y Leyes Matemáticas",
+      "tokenCount": 92,
+      "vector": [
+        -0.3158,
+        0.9485,
+        0.6615,
+        0.1363,
+        0.1348,
+        -0.1273,
+        0.8557,
+        -0.6124
+      ],
+      "textExcerpt": "en estado de reposo o que se mueven a velocidad constante.\n\n### Tres Leyes de Newton del Movimiento\n1. **Primera Ley:** Una partícula en reposo o con movimiento rectilíneo uniforme permanecerá en dicho estado a menos que actúe sobre ella una fuerza desbalanceada:\n$$\\sum \\vec{F} ..."
+    }
+  ]
+}

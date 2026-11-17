@@ -1,0 +1,21 @@
+# TERMODINÁMICA (9na Edición)
+**Autores:** Yunus A. Çengel, Michael A. Boles · McGraw-Hill
+**Disciplina:** Termodinámica Aplicada
+
+---
+
+## CAPÍTULO 4: ANÁLISIS DE ENERGÍA DE SISTEMAS CERRADOS
+
+### Primera Ley de la Termodinámica (Balance de Energía)
+Para cualquier sistema cerrado estacionario que experimenta un proceso entre los estados 1 y 2:
+
+$$Q_{\text{neto, entra}} - W_{\text{neto, sale}} = \Delta U$$
+
+Donde el cambio de energía interna $\Delta U$ para un gas ideal con calores específicos constantes se expresa como:
+$$\Delta U = m \cdot c_v \cdot (T_2 - T_1)$$
+
+Y el cambio de entalpía $\Delta H$:
+$$\Delta H = m \cdot c_p \cdot (T_2 - T_1)$$
+
+### Trabajo de Frontera Móvil (Expansión Cuasiestática)
+$$W_b = \int_1^2 P \, dV$$

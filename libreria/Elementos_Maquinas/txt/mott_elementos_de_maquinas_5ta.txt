@@ -1,0 +1,21 @@
+# ELEMENTOS DE MÁQUINAS EN EL DISEÑO MECÁNICO (5ta Edición)
+**Autores:** Robert L. Mott, Edward M. Vavrek, Jyhwen Wang · Pearson
+**Disciplina:** Transmisión de Potencia y Engranajes
+
+---
+
+## CAPÍTULO 8: ENGRANAJES RECTOS Y HELICOIDALES
+
+### Cinemática y Relación de Transmisión
+Para un piñón impulsor con $N_P$ dientes y corona conducida con $N_G$ dientes:
+
+$$m_G = \frac{N_G}{N_P} = \frac{d_G}{d_P} = \frac{\omega_P}{\omega_G}$$
+
+### Fuerza Tangencial Transmitida y Potencia
+$$W_t = \frac{60000 \cdot P}{\pi \cdot d \cdot n} \quad [\text{N}]$$
+
+Componente de fuerza radial con ángulo de presión $\phi = 20^\circ$:
+$$W_r = W_t \cdot \tan(\phi)$$
+
+### Ecuación de Flexión de Lewis (AGMA)
+$$\sigma = \frac{W_t}{F \cdot m} \cdot K_v \cdot K_o \cdot K_m \cdot \frac{1}{J}$$

@@ -1,0 +1,72 @@
+{
+  "discipline": "Estatica",
+  "fileName": "2011 F1 Visor Specification v0.4.pdf",
+  "cleanTitle": "2011 F1 Visor Specification v0.4",
+  "pages": 2,
+  "author": "Documento PDF Indexado",
+  "isExample": false,
+  "model": "text-embedding-004 (768-D)",
+  "chunkStrategy": "semantic",
+  "chunkSize": 512,
+  "chunkOverlap": 64,
+  "chunksCount": 3,
+  "extractedAt": "2026-11-13T03:51:43.845Z",
+  "storagePaths": {
+    "pdf": "/app/applet/libreria/Estatica/pdf/2011 F1 Visor Specification v0.4.pdf",
+    "txt": "/app/applet/libreria/Estatica/txt/2011 F1 Visor Specification v0.4.txt",
+    "vector": "/app/applet/libreria/Estatica/vector/2011 F1 Visor Specification v0.4_vectors.json"
+  },
+  "sampleChunks": [
+    {
+      "chunkIndex": 1,
+      "pageNumber": 1,
+      "sectionTitle": "2011 F1 VISOR SPECIFICATION V0.4",
+      "tokenCount": 30,
+      "vector": [
+        0.7933,
+        0.3419,
+        -0.4239,
+        -0.7999,
+        -0.4405,
+        0.3239,
+        0.7905,
+        0.5304
+      ],
+      "textExcerpt": "# 2011 F1 VISOR SPECIFICATION V0.4 **Disciplina:** Estatica **Archivo Original:** 2011 F1 Visor Specification v0.4.pdf **Páginas Totales:** 2 **Fecha de Indexación:** 11/13/2026 ---"
+    },
+    {
+      "chunkIndex": 2,
+      "pageNumber": 1,
+      "sectionTitle": "PÁGINA 1",
+      "tokenCount": 134,
+      "vector": [
+        -0.2044,
+        -0.7613,
+        -0.6182,
+        0.0932,
+        0.719,
+        0.6837,
+        0.0198,
+        -0.6623
+      ],
+      "textExcerpt": "## PÁGINA 1 FEDERATION INTERNATIONALE DE L'AUTOMOBILE 30.05.2012 Page 1 of 2 FIA SPECIFICATION 2011 F1 VISOR REINFORCEMENT PANEL FOR FIA 8860 HELMET 1. SCOPE The visor shall be fitted with a reinforcement panel in accordance with this specification. The original visor, before the reinforcement panel is fitted, shall be certified with the helmet to FIA 8860-2"
+    },
+    {
+      "chunkIndex": 3,
+      "pageNumber": 2,
+      "sectionTitle": "PÁGINA 2",
+      "tokenCount": 291,
+      "vector": [
+        -0.7407,
+        -0.1457,
+        0.5832,
+        0.7759,
+        0.2553,
+        -0.5001,
+        -0.7956,
+        -0.3597
+      ],
+      "textExcerpt": "## PÁGINA 2 FEDERATION INTERNATIONALE DE L'AUTOMOBILE 30.05.2012 Page 2 of 2 3. Minimum X-Section The minimum x-section is provided in Figure 2. Figure 2. Minimum x-section 4. Construction The reinforcement panel shall be constructed from Zylon (PBO) fibres, impregnated with a toughened epoxy resin system. The nominal cloth weight should be 300gsm. A complia"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "discipline": "Elementos_Maquinas",
+  "bookTitle": "Elementos de Máquinas en el Diseño Mecánico",
+  "fileName": "mott_elementos_de_maquinas_5ta.pdf",
+  "model": "text-embedding-004 (768-D)",
+  "chunksCount": 1750,
+  "extractedAt": "2026-11-10T01:04:52.055Z",
+  "chunks": [
+    {
+      "chunkIndex": 1,
+      "section": "Principios y Fundamentos",
+      "tokenCount": 86,
+      "vector": [
+        -0.7907,
+        -0.6111,
+        -0.2619,
+        -0.6823,
+        0.7128,
+        0.6144,
+        0.8994,
+        0.8277
+      ],
+      "textExcerpt": "# ELEMENTOS DE MÁQUINAS EN EL DISEÑO MECÁNICO (5ta Edición)\n**Autores:** Robert L. Mott, Edward M. Vavrek, Jyhwen Wang · Pearson\n**Disciplina:** Transmisión de Potencia y Engranajes\n\n---\n\n## CAPÍTULO 8: ENGRANAJES RECTOS Y HELICOIDALES\n\n###..."
+    },
+    {
+      "chunkIndex": 2,
+      "section": "Formulaciones y Leyes Matemáticas",
+      "tokenCount": 92,
+      "vector": [
+        -0.7047,
+        0.8238,
+        0.2026,
+        0.7666,
+        0.1038,
+        -0.2683,
+        -0.2291,
+        0.9721
+      ],
+      "textExcerpt": "Cinemática y Relación de Transmisión\nPara un piñón impulsor con $N_P$ dientes y corona conducida con $N_G$ dientes:\n\n$$m_G = \\frac{N_G}{N_P} = \\frac{d_G}{d_P} = \\frac{\\omega_P}{\\omega_G}$$\n\n### Fuerza Tangencial Transmitida y Potencia\n$$W_t = \\frac{60000 \\cdot P}{\\pi \\cdot d \\cd..."
+    }
+  ]
+}

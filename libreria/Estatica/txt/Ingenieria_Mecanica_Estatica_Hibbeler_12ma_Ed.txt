@@ -1,0 +1,36 @@
+# INGENIERÍA MECÁNICA: ESTÁTICA (12ma Edición)
+**Autor:** R. C. Hibbeler · Prentice Hall
+**Disciplina:** Estática y Análisis Estructural
+
+---
+
+## CAPÍTULO 1: PRINCIPIOS GENERALES
+La estática es la rama de la mecánica que estudia los cuerpos en estado de reposo o que se mueven a velocidad constante.
+
+### Tres Leyes de Newton del Movimiento
+1. **Primera Ley:** Una partícula en reposo o con movimiento rectilíneo uniforme permanecerá en dicho estado a menos que actúe sobre ella una fuerza desbalanceada:
+$$\sum \vec{F} = 0$$
+
+2. **Segunda Ley:** Una partícula sobre la que actúa una fuerza desbalanceada experimenta una aceleración con la misma dirección que la fuerza:
+$$\vec{F} = m \cdot \vec{a}$$
+
+3. **Tercera Ley:** Las fuerzas de acción y reacción entre cuerpos en contacto tienen igual magnitud, misma línea de acción y sentidos opuestos:
+$$\vec{F}_{A \to B} = -\vec{F}_{B \to A}$$
+
+---
+
+## CAPÍTULO 5: EQUILIBRIO DE UN CUERPO RÍGIDO EN 2D Y 3D
+
+Para garantizar el equilibrio completo de una estructura coplanar, se deben satisfacer simultáneamente las tres ecuaciones escalares independientes:
+
+$$\sum F_x = 0$$
+$$\sum F_y = 0$$
+$$\sum M_O = 0$$
+
+Donde $\sum M_O$ representa la sumatoria de momentos de todas las fuerzas actuantes respecto a cualquier punto arbitrario $O$ en el plano.
+
+### Diagrama de Cuerpo Libre (DCL)
+Un soporte articulado liso ejerce dos componentes de reacción perpendiculares $A_x$ y $A_y$:
+$$R_A = \sqrt{A_x^2 + A_y^2}, \quad \theta = \arctan\left(\frac{A_y}{A_x}\right)$$
+
+Mientras que un soporte de rodillo únicamente transmite fuerza normal a la superficie de apoyo.

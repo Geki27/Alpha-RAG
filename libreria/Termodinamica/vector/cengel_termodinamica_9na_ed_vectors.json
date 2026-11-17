@@ -1,0 +1,42 @@
+{
+  "discipline": "Termodinamica",
+  "bookTitle": "Termodinámica",
+  "fileName": "cengel_termodinamica_9na_ed.pdf",
+  "model": "text-embedding-004 (768-D)",
+  "chunksCount": 2190,
+  "extractedAt": "2026-11-10T01:04:52.055Z",
+  "chunks": [
+    {
+      "chunkIndex": 1,
+      "section": "Principios y Fundamentos",
+      "tokenCount": 86,
+      "vector": [
+        -0.1787,
+        -0.7746,
+        0.9624,
+        -0.21,
+        -0.9835,
+        0.5369,
+        0.974,
+        0.2941
+      ],
+      "textExcerpt": "# TERMODINÁMICA (9na Edición)\n**Autores:** Yunus A. Çengel, Michael A. Boles · McGraw-Hill\n**Disciplina:** Termodinámica Aplicada\n\n---\n\n## CAPÍTULO 4: ANÁLISIS DE ENERGÍA DE SISTEMAS CERRADOS\n\n### Primera Ley de la Termodinámica (Balance de..."
+    },
+    {
+      "chunkIndex": 2,
+      "section": "Formulaciones y Leyes Matemáticas",
+      "tokenCount": 92,
+      "vector": [
+        -0.4925,
+        -0.2153,
+        -0.02,
+        0.0752,
+        0.6337,
+        -0.4265,
+        -0.2994,
+        0.922
+      ],
+      "textExcerpt": "Energía)\nPara cualquier sistema cerrado estacionario que experimenta un proceso entre los estados 1 y 2:\n\n$$Q_{\\text{neto, entra}} - W_{\\text{neto, sale}} = \\Delta U$$\n\nDonde el cambio de energía interna $\\Delta U$ para un gas ideal con calores específicos constantes se expresa ..."
+    }
+  ]
+}
