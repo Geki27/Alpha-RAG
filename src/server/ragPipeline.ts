@@ -727,6 +727,11 @@ export async function executeLocalRetrieval(query: string, topK = 4): Promise<{
   let totalChunksExamined = 0;
 
   if (fs.existsSync(ROOT_LIBRARY_DIR)) {
+    const visibleBooks = getPhysicalLibraryTree();
+    const visibleBookKeys = new Set(
+      visibleBooks.map((b) => `${b.discipline}/${b.fileName.replace(/\.pdf$/i, '')}`)
+    );
+
     const disciplines = fs.readdirSync(ROOT_LIBRARY_DIR);
 
     for (const disc of disciplines) {
@@ -741,6 +746,9 @@ export async function executeLocalRetrieval(query: string, topK = 4): Promise<{
       for (const txtFile of txtFiles) {
         const fullTxtPath = path.join(txtDir, txtFile);
         const baseName = txtFile.replace(/\.txt$/i, '');
+        if (!visibleBookKeys.has(`${disc}/${baseName}`)) {
+          continue;
+        }
         const originalPdfName = `${baseName}.pdf`;
         const normDocName = normalizeSearchText(baseName.replace(/[_-]/g, ' '));
 

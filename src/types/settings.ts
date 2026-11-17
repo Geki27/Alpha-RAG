@@ -3,6 +3,8 @@ import { EffortLevel } from './models';
 export type OcrQualityLevel = 'fast' | 'balanced' | 'high';
 export type PersistedSearchScope = 'local' | 'web' | 'ambas';
 
+export type ChunkStrategyType = 'semantic' | 'recursive' | 'sliding' | 'pages';
+
 export interface RuntimeTaskSettings {
   // Task-specific models
   chatModel: string;
@@ -35,6 +37,13 @@ export interface RuntimeTaskSettings {
   searchScope: PersistedSearchScope;
   hideExamples: boolean;
   deletedSeedFiles: string[];
+
+  // Library ingestion & chunking preferences
+  chunkStrategy: ChunkStrategyType;
+  chunkSize: number;
+  chunkOverlap: number;
+  uploadDiscipline: string;
+  activeDiscipline: string;
 }
 
 export interface ProviderKeyInfo {
@@ -90,4 +99,10 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeTaskSettings = {
   searchScope: 'local',
   hideExamples: false,
   deletedSeedFiles: [],
+
+  chunkStrategy: 'semantic',
+  chunkSize: 512,
+  chunkOverlap: 64,
+  uploadDiscipline: 'Estatica',
+  activeDiscipline: 'ALL',
 };

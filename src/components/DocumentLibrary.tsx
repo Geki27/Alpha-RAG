@@ -16,6 +16,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { DocumentSource } from '../types/rag';
+import { ChunkStrategyType } from '../types/settings';
 
 interface DocumentLibraryProps {
   onOpenPdf: (docName: string, page: number) => void;
@@ -25,6 +26,14 @@ interface DocumentLibraryProps {
   setDocuments?: React.Dispatch<React.SetStateAction<DocumentSource[]>>;
   onRefreshBooks?: () => Promise<void> | void;
   onOpenLibraryModal?: () => void;
+  chunkStrategy?: ChunkStrategyType;
+  onChangeChunkStrategy?: (strategy: ChunkStrategyType) => void;
+  chunkSize?: number;
+  onChangeChunkSize?: (size: number) => void;
+  chunkOverlap?: number;
+  onChangeChunkOverlap?: (overlap: number) => void;
+  uploadDiscipline?: string;
+  onChangeUploadDiscipline?: (discipline: string) => void;
 }
 
 const LIBRARY_DISCIPLINES = [
@@ -42,19 +51,51 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
   documents: externalDocs,
   onRefreshBooks,
   onOpenLibraryModal,
+  chunkStrategy: chunkStrategyProp,
+  onChangeChunkStrategy,
+  chunkSize: chunkSizeProp,
+  onChangeChunkSize,
+  chunkOverlap: chunkOverlapProp,
+  onChangeChunkOverlap,
+  uploadDiscipline: uploadDisciplineProp,
+  onChangeUploadDiscipline,
 }) => {
   const documents = externalDocs || [];
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadDiscipline, setUploadDiscipline] = useState<string>('Estatica');
+  const [internalUploadDiscipline, setInternalUploadDiscipline] = useState<string>('Estatica');
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null);
 
-  // Chunking Strategy Settings
-  const [chunkSize, setChunkSize] = useState<number>(512);
-  const [chunkOverlap, setChunkOverlap] = useState<number>(64);
-  const [chunkStrategy, setChunkStrategy] = useState<string>('semantic');
+  // Chunking Strategy Settings (backed by persistent App/server settings when provided)
+  const [internalChunkSize, setInternalChunkSize] = useState<number>(512);
+  const [internalChunkOverlap, setInternalChunkOverlap] = useState<number>(64);
+  const [internalChunkStrategy, setInternalChunkStrategy] = useState<ChunkStrategyType>('semantic');
+
+  const uploadDiscipline = uploadDisciplineProp ?? internalUploadDiscipline;
+  const setUploadDiscipline = (val: string) => {
+    setInternalUploadDiscipline(val);
+    onChangeUploadDiscipline?.(val);
+  };
+
+  const chunkSize = chunkSizeProp ?? internalChunkSize;
+  const setChunkSize = (val: number) => {
+    setInternalChunkSize(val);
+    onChangeChunkSize?.(val);
+  };
+
+  const chunkOverlap = chunkOverlapProp ?? internalChunkOverlap;
+  const setChunkOverlap = (val: number) => {
+    setInternalChunkOverlap(val);
+    onChangeChunkOverlap?.(val);
+  };
+
+  const chunkStrategy = chunkStrategyProp ?? internalChunkStrategy;
+  const setChunkStrategy = (val: ChunkStrategyType) => {
+    setInternalChunkStrategy(val);
+    onChangeChunkStrategy?.(val);
+  };
 
   const handleDeleteBook = async (doc: DocumentSource) => {
     const disc = doc.discipline || 'Estatica';
@@ -108,7 +149,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
       const jobId = uploadData.jobId;
       const pollInterval = setInterval(async () => {
         try {
-          const jobRes = await fetch(`/api/library/job/${jobId}`);
+          const jobRes = await fetch(`/api/library/job/${jobId}`, { cache: 'no-store' });
           if (!jobRes.ok) return;
           const { job } = await jobRes.json();
           if (!job) return;
@@ -309,7 +350,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
                 ].map((strat) => (
                   <button
                     key={strat.id}
-                    onClick={() => setChunkStrategy(strat.id)}
+                    onClick={() => setChunkStrategy(strat.id as ChunkStrategyType)}
                     className={`p-2.5 rounded-xl text-left border text-xs transition-all ${
                       chunkStrategy === strat.id
                         ? 'bg-white/[0.08] border-white/40 text-white'

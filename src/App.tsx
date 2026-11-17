@@ -33,7 +33,7 @@ const IndexedLibraryModal = lazy(() =>
 );
 import { INITIAL_SESSIONS } from './data/mockRagData';
 import { ModelDefinition, EffortLevel, AVAILABLE_MODELS } from './types/models';
-import { RuntimeTaskSettings } from './types/settings';
+import { ChunkStrategyType, RuntimeTaskSettings } from './types/settings';
 import { SearchScope } from './components/AttachmentMenu';
 
 const UI_PREFS_STORAGE_KEY = 'aether_ui_prefs_v1';
@@ -51,6 +51,11 @@ interface StoredUiPrefs {
   temperature?: number;
   rerankEnabled?: boolean;
   hideExamples?: boolean;
+  chunkStrategy?: ChunkStrategyType;
+  chunkSize?: number;
+  chunkOverlap?: number;
+  uploadDiscipline?: string;
+  activeDiscipline?: string;
 }
 
 function readStoredUiPrefs(): StoredUiPrefs {
@@ -166,14 +171,32 @@ export default function App() {
   const [hideExamples, setHideExamples] = useState<boolean>(
     typeof initialUiPrefs.hideExamples === 'boolean' ? initialUiPrefs.hideExamples : false
   );
+  const [chunkStrategy, setChunkStrategy] = useState<ChunkStrategyType>(
+    initialUiPrefs.chunkStrategy || 'semantic'
+  );
+  const [chunkSize, setChunkSize] = useState<number>(
+    typeof initialUiPrefs.chunkSize === 'number' ? initialUiPrefs.chunkSize : 512
+  );
+  const [chunkOverlap, setChunkOverlap] = useState<number>(
+    typeof initialUiPrefs.chunkOverlap === 'number' ? initialUiPrefs.chunkOverlap : 64
+  );
+  const [uploadDiscipline, setUploadDiscipline] = useState<string>(
+    initialUiPrefs.uploadDiscipline || 'Estatica'
+  );
+  const [activeDiscipline, setActiveDiscipline] = useState<string>(
+    initialUiPrefs.activeDiscipline || 'ALL'
+  );
 
-  const hasHydratedSettingsRef = useRef<boolean>(false);
   const dirtyFieldsRef = useRef<Set<keyof RuntimeTaskSettings>>(new Set());
+  const hasPendingWorkspaceSaveRef = useRef<boolean>(false);
+  const availableModelsRef = useRef<ModelDefinition[]>(availableModels);
+  availableModelsRef.current = availableModels;
   const ragModelRef = useRef<string>(ragModel);
   ragModelRef.current = ragModel;
 
   const markSettingDirty = useCallback((...fields: Array<keyof RuntimeTaskSettings>) => {
     fields.forEach((f) => dirtyFieldsRef.current.add(f));
+    hasPendingWorkspaceSaveRef.current = true;
   }, []);
 
   const handleSetParticleSpeed = useCallback((v: number) => {
@@ -227,11 +250,69 @@ export default function App() {
     setRagModel(model.id);
   }, [markSettingDirty]);
 
+  const handleSetChunkStrategy = useCallback((v: ChunkStrategyType) => {
+    markSettingDirty('chunkStrategy');
+    setChunkStrategy(v);
+  }, [markSettingDirty]);
+
+  const handleSetChunkSize = useCallback((v: number) => {
+    markSettingDirty('chunkSize');
+    setChunkSize(v);
+  }, [markSettingDirty]);
+
+  const handleSetChunkOverlap = useCallback((v: number) => {
+    markSettingDirty('chunkOverlap');
+    setChunkOverlap(v);
+  }, [markSettingDirty]);
+
+  const handleSetUploadDiscipline = useCallback((v: string) => {
+    markSettingDirty('uploadDiscipline');
+    setUploadDiscipline(v);
+  }, [markSettingDirty]);
+
+  const handleSetActiveDiscipline = useCallback((v: string) => {
+    markSettingDirty('activeDiscipline');
+    setActiveDiscipline(v);
+  }, [markSettingDirty]);
+
+  const latestWorkspacePayloadRef = useRef<Partial<RuntimeTaskSettings>>({});
+  latestWorkspacePayloadRef.current = {
+    chatModel: ragModel,
+    topK,
+    temperature,
+    rerankEnabled,
+    particleSpeed,
+    pointSize,
+    vignetteDarkness,
+    lockedIntrospect,
+    thinkingEnabled,
+    effortLevel,
+    searchScope,
+    chunkStrategy,
+    chunkSize,
+    chunkOverlap,
+    uploadDiscipline,
+    activeDiscipline,
+  };
+
+  const flushWorkspaceSettingsToServer = useCallback(() => {
+    if (!hasPendingWorkspaceSaveRef.current) return;
+    hasPendingWorkspaceSaveRef.current = false;
+    fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        settings: latestWorkspacePayloadRef.current,
+      }),
+    }).catch(() => {});
+  }, []);
+
   // Hydrate persisted server settings immediately (fast local disk read, decoupled from external /api/models)
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/api/settings')
+    fetch('/api/settings', { cache: 'no-store' })
       .then((res) => res.json())
       .then((settingsData) => {
         if (cancelled) return;
@@ -250,26 +331,22 @@ export default function App() {
           if (!dirty.has('effortLevel') && typeof s.effortLevel === 'string') setEffortLevel(s.effortLevel as EffortLevel);
           if (!dirty.has('searchScope') && typeof s.searchScope === 'string') setSearchScope(s.searchScope as SearchScope);
           if (!dirty.has('hideExamples') && typeof s.hideExamples === 'boolean') setHideExamples(s.hideExamples);
+          if (!dirty.has('chunkStrategy') && typeof s.chunkStrategy === 'string') setChunkStrategy(s.chunkStrategy as ChunkStrategyType);
+          if (!dirty.has('chunkSize') && typeof s.chunkSize === 'number') setChunkSize(s.chunkSize);
+          if (!dirty.has('chunkOverlap') && typeof s.chunkOverlap === 'number') setChunkOverlap(s.chunkOverlap);
+          if (!dirty.has('uploadDiscipline') && typeof s.uploadDiscipline === 'string') setUploadDiscipline(s.uploadDiscipline);
+          if (!dirty.has('activeDiscipline') && typeof s.activeDiscipline === 'string') setActiveDiscipline(s.activeDiscipline);
           if (!dirty.has('chatModel') && typeof s.chatModel === 'string' && s.chatModel) {
             setRagModel(s.chatModel);
-            setAvailableModels((currentModels) => {
-              const matched = currentModels.find((m) => m.id === s.chatModel);
-              if (matched) setSelectedModel(matched);
-              return currentModels;
-            });
+            const matched = availableModelsRef.current.find((m) => m.id === s.chatModel);
+            if (matched) setSelectedModel(matched);
           }
         }
-
-        hasHydratedSettingsRef.current = true;
       })
-      .catch(() => {
-        if (!cancelled) {
-          hasHydratedSettingsRef.current = true;
-        }
-      });
+      .catch(() => {});
 
     // Auto-detect models independently without blocking settings hydration
-    fetch('/api/models')
+    fetch('/api/models', { cache: 'no-store' })
       .then((res) => res.json())
       .then((modelsData) => {
         if (cancelled) return;
@@ -295,7 +372,7 @@ export default function App() {
   // Mirror UI preferences synchronously to localStorage on every change
   useEffect(() => {
     writeStoredUiPrefs({
-      chatModel: selectedModel.id,
+      chatModel: ragModel,
       topK,
       temperature,
       rerankEnabled,
@@ -307,9 +384,14 @@ export default function App() {
       effortLevel,
       searchScope,
       hideExamples,
+      chunkStrategy,
+      chunkSize,
+      chunkOverlap,
+      uploadDiscipline,
+      activeDiscipline,
     });
   }, [
-    selectedModel.id,
+    ragModel,
     topK,
     temperature,
     rerankEnabled,
@@ -321,38 +403,24 @@ export default function App() {
     effortLevel,
     searchScope,
     hideExamples,
+    chunkStrategy,
+    chunkSize,
+    chunkOverlap,
+    uploadDiscipline,
+    activeDiscipline,
   ]);
 
-  // Auto-persist workspace, RAG & WebGL background settings to server disk across restarts
+  // Auto-persist user-modified workspace, RAG, library & WebGL background settings to server disk
   useEffect(() => {
-    if (!hasHydratedSettingsRef.current && dirtyFieldsRef.current.size === 0) return;
+    if (!hasPendingWorkspaceSaveRef.current) return;
 
     const timer = setTimeout(() => {
-      fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        keepalive: true,
-        body: JSON.stringify({
-          settings: {
-            chatModel: selectedModel.id,
-            topK,
-            temperature,
-            rerankEnabled,
-            particleSpeed,
-            pointSize,
-            vignetteDarkness,
-            lockedIntrospect,
-            thinkingEnabled,
-            effortLevel,
-            searchScope,
-          },
-        }),
-      }).catch(() => {});
-    }, 150);
+      flushWorkspaceSettingsToServer();
+    }, 120);
 
     return () => clearTimeout(timer);
   }, [
-    selectedModel.id,
+    ragModel,
     topK,
     temperature,
     rerankEnabled,
@@ -363,7 +431,26 @@ export default function App() {
     thinkingEnabled,
     effortLevel,
     searchScope,
+    chunkStrategy,
+    chunkSize,
+    chunkOverlap,
+    uploadDiscipline,
+    activeDiscipline,
+    flushWorkspaceSettingsToServer,
   ]);
+
+  // Flush any unsent settings change immediately on tab reload / close
+  useEffect(() => {
+    const handleFlush = () => {
+      flushWorkspaceSettingsToServer();
+    };
+    window.addEventListener('pagehide', handleFlush);
+    window.addEventListener('beforeunload', handleFlush);
+    return () => {
+      window.removeEventListener('pagehide', handleFlush);
+      window.removeEventListener('beforeunload', handleFlush);
+    };
+  }, [flushWorkspaceSettingsToServer]);
 
   // Generating State
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -385,7 +472,7 @@ export default function App() {
 
   const refreshLibraryBooks = useCallback(async () => {
     try {
-      const response = await fetch('/api/library/books');
+      const response = await fetch('/api/library/books', { cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json();
       if (typeof data.hideExamples === 'boolean' && !dirtyFieldsRef.current.has('hideExamples')) {
@@ -664,6 +751,7 @@ export default function App() {
 
   const handleResetDefaults = useCallback(() => {
     dirtyFieldsRef.current.clear();
+    hasPendingWorkspaceSaveRef.current = false;
     setParticleSpeed(1.0);
     setPointSize(10.0);
     setVignetteDarkness(1.5);
@@ -675,6 +763,11 @@ export default function App() {
     setTemperature(0.1);
     setRerankEnabled(true);
     setHideExamples(false);
+    setChunkStrategy('semantic');
+    setChunkSize(512);
+    setChunkOverlap(64);
+    setUploadDiscipline('Estatica');
+    setActiveDiscipline('ALL');
     const defaultModel = availableModels.find((m) => m.id === 'gemini-2.5-flash') || AVAILABLE_MODELS[0];
     setSelectedModel(defaultModel);
     setRagModel(defaultModel.id);
@@ -783,6 +876,14 @@ export default function App() {
                 setDocuments={setDocuments}
                 onRefreshBooks={refreshLibraryBooks}
                 onOpenLibraryModal={() => setIsLibraryModalOpen(true)}
+                chunkStrategy={chunkStrategy}
+                onChangeChunkStrategy={handleSetChunkStrategy}
+                chunkSize={chunkSize}
+                onChangeChunkSize={handleSetChunkSize}
+                chunkOverlap={chunkOverlap}
+                onChangeChunkOverlap={handleSetChunkOverlap}
+                uploadDiscipline={uploadDiscipline}
+                onChangeUploadDiscipline={handleSetUploadDiscipline}
               />
             )}
 
@@ -875,6 +976,16 @@ export default function App() {
             onRefreshBooks={refreshLibraryBooks}
             hideExamples={hideExamples}
             onToggleHideExamples={handleToggleHideExamples}
+            chunkStrategy={chunkStrategy}
+            onChangeChunkStrategy={handleSetChunkStrategy}
+            chunkSize={chunkSize}
+            onChangeChunkSize={handleSetChunkSize}
+            chunkOverlap={chunkOverlap}
+            onChangeChunkOverlap={handleSetChunkOverlap}
+            uploadDiscipline={uploadDiscipline}
+            onChangeUploadDiscipline={handleSetUploadDiscipline}
+            activeDiscipline={activeDiscipline}
+            onChangeActiveDiscipline={handleSetActiveDiscipline}
             onCardHoverStart={handleCardHoverStart}
             onCardHoverEnd={handleCardHoverEnd}
           />

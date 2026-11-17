@@ -67,7 +67,11 @@ export default defineConfig(() => {
         // HMR/WS is disabled in AI Studio container environments to prevent WebSocket port conflicts and agent-edit flickering.
         hmr: !disableHmr,
         ws: disableHmr ? (false as const) : undefined,
-        watch: disableHmr ? null : {},
+        watch: disableHmr
+          ? null
+          : {
+              ignored: ['**/libreria/**', '**/temp_uploads/**'],
+            },
       };
     })(),
   };

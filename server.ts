@@ -55,6 +55,15 @@ app.use((_req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Prevent browser/proxy/ETag caching on dynamic API state (/api/settings, /api/library/books, etc.)
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
 // Ensure physical folder structure & temp directory exist and seed default books
 const TEMP_UPLOADS_DIR = path.resolve(process.cwd(), 'temp_uploads');
 if (!fs.existsSync(TEMP_UPLOADS_DIR)) {
@@ -342,6 +351,14 @@ app.post('/api/library/reindex', async (req, res) => {
     const chunkSize = parseInt(req.body?.chunkSize) || 512;
     const chunkOverlap = parseInt(req.body?.chunkOverlap) || 64;
     const chunkStrategy = req.body?.chunkStrategy || 'semantic';
+
+    updateRuntimeSettings({
+      settings: {
+        chunkSize,
+        chunkOverlap,
+        chunkStrategy,
+      },
+    });
 
     const result = await reindexPhysicalLibrary({
       chunkSize,

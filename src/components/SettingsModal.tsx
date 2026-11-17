@@ -162,14 +162,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   } | null>(null);
 
   const hasLoadedModalSettingsRef = useRef(false);
-  const hasUserEditedTaskRef = useRef(false);
+  const hasPendingTaskSaveRef = useRef(false);
+  const latestTaskSettingsRef = useRef<RuntimeTaskSettings>(taskSettings);
+  latestTaskSettingsRef.current = taskSettings;
+
+  const flushTaskSettingsToServer = () => {
+    if (!hasPendingTaskSaveRef.current) return;
+    hasPendingTaskSaveRef.current = false;
+    const latest = latestTaskSettingsRef.current;
+    fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        settings: {
+          chatModel: latest.chatModel,
+          visionOcrModel: latest.visionOcrModel,
+          webSearchModel: latest.webSearchModel,
+          embeddingModel: latest.embeddingModel,
+          visionOcrEnabled: latest.visionOcrEnabled,
+          ocrMaxPagesPerDoc: latest.ocrMaxPagesPerDoc,
+          ocrMaxFileSizeMb: latest.ocrMaxFileSizeMb,
+          ocrQuality: latest.ocrQuality,
+          ocrTimeoutSeconds: latest.ocrTimeoutSeconds,
+          ocrStrictLatex: latest.ocrStrictLatex,
+          similarityThreshold: latest.similarityThreshold,
+          llmTimeoutSeconds: latest.llmTimeoutSeconds,
+        },
+      }),
+    }).catch(() => {});
+  };
 
   const updateTaskSetting = <K extends keyof RuntimeTaskSettings>(
     key: K,
     value: RuntimeTaskSettings[K]
   ) => {
-    hasUserEditedTaskRef.current = true;
-    setTaskSettings((prev) => ({ ...prev, [key]: value }));
+    hasPendingTaskSaveRef.current = true;
+    const next = { ...latestTaskSettingsRef.current, [key]: value };
+    latestTaskSettingsRef.current = next;
+    setTaskSettings(next);
 
     if (key === 'chatModel' && typeof value === 'string') {
       setRagModel(value);
@@ -184,30 +215,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       hasLoadedModalSettingsRef.current = false;
-      hasUserEditedTaskRef.current = false;
       return;
     }
     let cancelled = false;
     hasLoadedModalSettingsRef.current = false;
-    hasUserEditedTaskRef.current = false;
+    hasPendingTaskSaveRef.current = false;
     setStatusFeedback(null);
     setIsLoadingSettings(true);
 
-    fetch('/api/settings')
+    fetch('/api/settings', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         if (cancelled || !data?.success) return;
         if (data.settings) {
-          setTaskSettings({
+          const merged: RuntimeTaskSettings = {
             ...data.settings,
-            chatModel: selectedModel.id || data.settings.chatModel,
+            chatModel: ragModel || data.settings.chatModel,
             topK,
             temperature,
             rerankEnabled,
             particleSpeed,
             pointSize,
             vignetteDarkness,
-          });
+          };
+          latestTaskSettingsRef.current = merged;
+          setTaskSettings(merged);
         }
         if (data.providers) {
           setProvidersInfo(data.providers);
@@ -227,35 +259,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
   }, [isOpen]);
 
-  // Auto-persist taskSettings edits immediately so closing via X/backdrop never loses changes
+  // Auto-persist taskSettings edits immediately and flush on close/unmount/reload
   useEffect(() => {
-    if (!isOpen || !hasLoadedModalSettingsRef.current || !hasUserEditedTaskRef.current) return;
+    if (!isOpen || !hasLoadedModalSettingsRef.current || !hasPendingTaskSaveRef.current) return;
 
     const timer = setTimeout(() => {
-      fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        keepalive: true,
-        body: JSON.stringify({
-          settings: {
-            chatModel: taskSettings.chatModel,
-            visionOcrModel: taskSettings.visionOcrModel,
-            webSearchModel: taskSettings.webSearchModel,
-            embeddingModel: taskSettings.embeddingModel,
-            visionOcrEnabled: taskSettings.visionOcrEnabled,
-            ocrMaxPagesPerDoc: taskSettings.ocrMaxPagesPerDoc,
-            ocrMaxFileSizeMb: taskSettings.ocrMaxFileSizeMb,
-            ocrQuality: taskSettings.ocrQuality,
-            ocrTimeoutSeconds: taskSettings.ocrTimeoutSeconds,
-            ocrStrictLatex: taskSettings.ocrStrictLatex,
-            similarityThreshold: taskSettings.similarityThreshold,
-            llmTimeoutSeconds: taskSettings.llmTimeoutSeconds,
-          },
-        }),
-      }).catch(() => {});
-    }, 150);
+      flushTaskSettingsToServer();
+    }, 120);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [
     isOpen,
     taskSettings.chatModel,
@@ -272,12 +286,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     taskSettings.llmTimeoutSeconds,
   ]);
 
+  useEffect(() => {
+    const handleFlush = () => {
+      flushTaskSettingsToServer();
+    };
+    window.addEventListener('pagehide', handleFlush);
+    window.addEventListener('beforeunload', handleFlush);
+    return () => {
+      window.removeEventListener('pagehide', handleFlush);
+      window.removeEventListener('beforeunload', handleFlush);
+      flushTaskSettingsToServer();
+    };
+  }, []);
+
   if (!isOpen) return null;
 
   const googleModels = availableModels.filter((m) => m.provider === 'google');
   const nvidiaModels = availableModels.filter((m) => m.provider === 'nvidia');
 
   const handleSaveSettings = async (closeAfterSave = true) => {
+    hasPendingTaskSaveRef.current = false;
     setIsSaving(true);
     setStatusFeedback(null);
 
@@ -313,6 +341,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
         body: JSON.stringify({
           settings: payloadSettings,
           apiKeys: Object.keys(apiKeysPayload).length > 0 ? apiKeysPayload : undefined,
@@ -328,8 +357,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setProvidersInfo(data.providers);
       }
       if (data.settings) {
+        latestTaskSettingsRef.current = data.settings;
         setTaskSettings(data.settings);
       }
+      hasPendingTaskSaveRef.current = false;
       if (data.detection?.models && Array.isArray(data.detection.models) && data.detection.models.length > 0) {
         setAvailableModels(data.detection.models);
       }
@@ -375,7 +406,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (geminiInput.trim() || nvidiaInput.trim()) {
         await handleSaveSettings(false);
       }
-      const res = await fetch('/api/models');
+      const res = await fetch('/api/models', { cache: 'no-store' });
       const data = await res.json();
       if (data?.models && Array.isArray(data.models) && data.models.length > 0) {
         setAvailableModels(data.models);
@@ -395,12 +426,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleResetAll = async () => {
-    hasUserEditedTaskRef.current = false;
+    hasPendingTaskSaveRef.current = false;
+    latestTaskSettingsRef.current = { ...DEFAULT_RUNTIME_SETTINGS };
     onResetDefaults();
     try {
-      const res = await fetch('/api/settings/reset', { method: 'POST' });
+      const res = await fetch('/api/settings/reset', {
+        method: 'POST',
+        keepalive: true,
+      });
       const data = await res.json();
       if (data?.success && data.settings) {
+        latestTaskSettingsRef.current = data.settings;
         setTaskSettings(data.settings);
         const defaultChat = availableModels.find((m) => m.id === data.settings.chatModel);
         if (defaultChat) setSelectedModel(defaultChat);
@@ -410,8 +446,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         await onRefreshBooks();
       }
     } catch {
+      latestTaskSettingsRef.current = { ...DEFAULT_RUNTIME_SETTINGS };
       setTaskSettings({ ...DEFAULT_RUNTIME_SETTINGS });
     }
+    hasPendingTaskSaveRef.current = false;
     setStatusFeedback({
       type: 'success',
       message: 'Valores iniciales restablecidos.',

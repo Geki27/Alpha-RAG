@@ -22,5 +22,10 @@
   "effortLevel": "medium",
   "searchScope": "local",
   "hideExamples": false,
-  "deletedSeedFiles": []
+  "deletedSeedFiles": [],
+  "chunkStrategy": "semantic",
+  "chunkSize": 512,
+  "chunkOverlap": 64,
+  "uploadDiscipline": "Estatica",
+  "activeDiscipline": "ALL"
 }

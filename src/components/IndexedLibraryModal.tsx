@@ -24,6 +24,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { DocumentSource, ChunkItem } from '../types/rag';
+import { ChunkStrategyType } from '../types/settings';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface IndexedLibraryModalProps {
@@ -36,6 +37,16 @@ interface IndexedLibraryModalProps {
   onRefreshBooks?: () => Promise<void> | void;
   hideExamples?: boolean;
   onToggleHideExamples?: (nextHide: boolean) => Promise<void> | void;
+  chunkStrategy?: ChunkStrategyType;
+  onChangeChunkStrategy?: (strategy: ChunkStrategyType) => void;
+  chunkSize?: number;
+  onChangeChunkSize?: (size: number) => void;
+  chunkOverlap?: number;
+  onChangeChunkOverlap?: (overlap: number) => void;
+  uploadDiscipline?: string;
+  onChangeUploadDiscipline?: (discipline: string) => void;
+  activeDiscipline?: string;
+  onChangeActiveDiscipline?: (discipline: string) => void;
   onCardHoverStart?: () => void;
   onCardHoverEnd?: () => void;
 }
@@ -59,13 +70,35 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
   onRefreshBooks,
   hideExamples: hideExamplesProp,
   onToggleHideExamples,
+  chunkStrategy: chunkStrategyProp,
+  onChangeChunkStrategy,
+  chunkSize: chunkSizeProp,
+  onChangeChunkSize,
+  chunkOverlap: chunkOverlapProp,
+  onChangeChunkOverlap,
+  uploadDiscipline: uploadDisciplineProp,
+  onChangeUploadDiscipline,
+  activeDiscipline: activeDisciplineProp,
+  onChangeActiveDiscipline,
   onCardHoverStart,
   onCardHoverEnd,
 }) => {
-  // Search query & Discipline filter
+  // Search query & Discipline filter (backed by persistent App/server settings when provided)
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeDiscipline, setActiveDiscipline] = useState<string>('ALL');
-  const [uploadDiscipline, setUploadDiscipline] = useState<string>('Estatica');
+  const [internalActiveDiscipline, setInternalActiveDiscipline] = useState<string>('ALL');
+  const [internalUploadDiscipline, setInternalUploadDiscipline] = useState<string>('Estatica');
+
+  const activeDiscipline = activeDisciplineProp ?? internalActiveDiscipline;
+  const setActiveDiscipline = (val: string) => {
+    setInternalActiveDiscipline(val);
+    onChangeActiveDiscipline?.(val);
+  };
+
+  const uploadDiscipline = uploadDisciplineProp ?? internalUploadDiscipline;
+  const setUploadDiscipline = (val: string) => {
+    setInternalUploadDiscipline(val);
+    onChangeUploadDiscipline?.(val);
+  };
   
   // Example books visibility state (synced with server settings)
   const [internalHideExamples, setInternalHideExamples] = useState(false);
@@ -84,10 +117,29 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
   const [isLoadingBookData, setIsLoadingBookData] = useState<boolean>(false);
   const [copiedLatex, setCopiedLatex] = useState<boolean>(false);
 
-  // Chunking Configuration Parameters
-  const [chunkStrategy, setChunkStrategy] = useState<'semantic' | 'recursive' | 'sliding' | 'pages'>('semantic');
-  const [chunkSize, setChunkSize] = useState<number>(512);
-  const [chunkOverlap, setChunkOverlap] = useState<number>(64);
+  // Chunking Configuration Parameters (backed by persistent App/server settings when provided)
+  const [internalChunkStrategy, setInternalChunkStrategy] = useState<ChunkStrategyType>('semantic');
+  const [internalChunkSize, setInternalChunkSize] = useState<number>(512);
+  const [internalChunkOverlap, setInternalChunkOverlap] = useState<number>(64);
+
+  const chunkStrategy = chunkStrategyProp ?? internalChunkStrategy;
+  const setChunkStrategy = (val: ChunkStrategyType) => {
+    setInternalChunkStrategy(val);
+    onChangeChunkStrategy?.(val);
+  };
+
+  const chunkSize = chunkSizeProp ?? internalChunkSize;
+  const setChunkSize = (val: number) => {
+    setInternalChunkSize(val);
+    onChangeChunkSize?.(val);
+  };
+
+  const chunkOverlap = chunkOverlapProp ?? internalChunkOverlap;
+  const setChunkOverlap = (val: number) => {
+    setInternalChunkOverlap(val);
+    onChangeChunkOverlap?.(val);
+  };
+
   const [embeddingModel] = useState<string>('text-embedding-004');
   const [isReindexing, setIsReindexing] = useState<boolean>(false);
 
@@ -104,7 +156,7 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
   // Fetch real books from physical library storage on backend
   const fetchPhysicalLibraryBooks = useCallback(async () => {
     try {
-      const response = await fetch('/api/library/books');
+      const response = await fetch('/api/library/books', { cache: 'no-store' });
       if (response.ok) {
         const data = await response.json();
         if (typeof data.hideExamples === 'boolean') {
@@ -223,10 +275,10 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
     setIsLoadingBookData(true);
 
     Promise.all([
-      fetch(`/api/library/file/${disc}/txt/${encodeURIComponent(txtFileName)}`)
+      fetch(`/api/library/file/${disc}/txt/${encodeURIComponent(txtFileName)}`, { cache: 'no-store' })
         .then(res => res.ok ? res.text() : '')
         .catch(() => ''),
-      fetch(`/api/library/file/${disc}/vector/${encodeURIComponent(vectorFileName)}`)
+      fetch(`/api/library/file/${disc}/vector/${encodeURIComponent(vectorFileName)}`, { cache: 'no-store' })
         .then(res => res.ok ? res.json() : null)
         .catch(() => null)
     ]).then(([txt, vec]) => {
@@ -313,7 +365,7 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
       // Poll extraction progress
       const pollInterval = setInterval(async () => {
         try {
-          const jobRes = await fetch(`/api/library/job/${jobId}`);
+          const jobRes = await fetch(`/api/library/job/${jobId}`, { cache: 'no-store' });
           if (jobRes.ok) {
             const { job } = await jobRes.json();
             if (job) {

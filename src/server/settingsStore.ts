@@ -29,6 +29,13 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
   const scope = raw.searchScope === 'local' || raw.searchScope === 'web' || raw.searchScope === 'ambas'
     ? raw.searchScope
     : base.searchScope;
+  const chunkStrategy =
+    raw.chunkStrategy === 'semantic' ||
+    raw.chunkStrategy === 'recursive' ||
+    raw.chunkStrategy === 'sliding' ||
+    raw.chunkStrategy === 'pages'
+      ? raw.chunkStrategy
+      : base.chunkStrategy;
 
   return {
     chatModel: typeof raw.chatModel === 'string' && raw.chatModel.trim() ? raw.chatModel.trim() : base.chatModel,
@@ -60,7 +67,26 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
     deletedSeedFiles: Array.isArray(raw.deletedSeedFiles)
       ? raw.deletedSeedFiles.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
       : base.deletedSeedFiles,
+
+    chunkStrategy,
+    chunkSize: Math.round(clampNumber(raw.chunkSize, 128, 2048, base.chunkSize)),
+    chunkOverlap: Math.round(clampNumber(raw.chunkOverlap, 0, 512, base.chunkOverlap)),
+    uploadDiscipline:
+      typeof raw.uploadDiscipline === 'string' && raw.uploadDiscipline.trim()
+        ? raw.uploadDiscipline.trim()
+        : base.uploadDiscipline,
+    activeDiscipline:
+      typeof raw.activeDiscipline === 'string' && raw.activeDiscipline.trim()
+        ? raw.activeDiscipline.trim()
+        : base.activeDiscipline,
   };
+}
+
+function writeSettingsAtomically(nextSettings: RuntimeTaskSettings): void {
+  ensureLibraryDirectories();
+  const tmpPath = `${SETTINGS_FILE}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmpPath, JSON.stringify(nextSettings, null, 2), 'utf-8');
+  fs.renameSync(tmpPath, SETTINGS_FILE);
 }
 
 export function getRuntimeSettings(): RuntimeTaskSettings {
@@ -172,7 +198,7 @@ export function updateRuntimeSettings(payload: UpdateSettingsPayload): PublicSet
   ensureLibraryDirectories();
   const current = getRuntimeSettings();
   const nextSettings = sanitizeSettings(payload.settings, current);
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(nextSettings, null, 2), 'utf-8');
+  writeSettingsAtomically(nextSettings);
 
   if (payload.apiKeys) {
     const envUpdates: Record<string, string | null> = {};
@@ -206,7 +232,6 @@ export function updateRuntimeSettings(payload: UpdateSettingsPayload): PublicSet
 }
 
 export function resetRuntimeSettings(): PublicSettingsPayload {
-  ensureLibraryDirectories();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(DEFAULT_RUNTIME_SETTINGS, null, 2), 'utf-8');
+  writeSettingsAtomically({ ...DEFAULT_RUNTIME_SETTINGS });
   return getPublicSettings();
 }
