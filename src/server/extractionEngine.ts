@@ -3,6 +3,7 @@ import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { extractText } from 'unpdf';
 import { ROOT_LIBRARY_DIR, ensureLibraryDirectories, SEED_BOOK_FILENAMES, getPhysicalLibraryTree, LibraryBookFile } from './libraryStorage';
+import { getRuntimeSettings } from './settingsStore';
 
 export interface ExtractionJob {
   id: string;
@@ -69,18 +70,43 @@ export function normalizeFormulasToLatex(text: string): string {
 }
 
 /**
- * Fallback OCR using Gemini 2.5 Flash for scanned / image-only PDFs
+ * Fallback OCR using configured Vision model for scanned / image-only PDFs
  */
-async function fallbackGeminiPdfOcr(pdfBuffer: Buffer, fileName: string): Promise<string | null> {
+async function fallbackGeminiPdfOcr(pdfBuffer: Buffer, fileName: string, totalPagesHint: number): Promise<string | null> {
   const ai = getGeminiClient();
   if (!ai) {
     return null;
   }
 
+  const runtime = getRuntimeSettings();
+  let targetModel = (runtime.visionOcrModel || 'gemini-2.5-flash').replace(/^models\//, '');
+  if (targetModel === 'nano-banana') {
+    targetModel = 'gemini-2.5-flash';
+  }
+
+  const maxPages = runtime.ocrMaxPagesPerDoc > 0 ? runtime.ocrMaxPagesPerDoc : 0;
+  const pageLimitRule = maxPages > 0 && totalPagesHint > maxPages
+    ? `\n5. LÍMITE ESTRICTO DE PÁGINAS OCR: Procesa ÚNICAMENTE desde la página 1 hasta la página ${maxPages} (de ${totalPagesHint} totales) y al final añade una nota: "> Nota OCR: Extracción limitada a las primeras ${maxPages} páginas según configuración."`
+    : maxPages > 0
+      ? `\n5. LÍMITE DE PÁGINAS OCR: No excedas ${maxPages} páginas procesadas.`
+      : '';
+
+  const latexRule = runtime.ocrStrictLatex
+    ? `2. Convierte todas las ecuaciones a LaTeX estricto: en línea usa $...$ y bloques aislados usa $$...$$.`
+    : `2. Conserva las ecuaciones matemáticas de forma legible (LaTeX opcional si mejora la claridad).`;
+
+  const qualityNote = runtime.ocrQuality === 'high'
+    ? 'Realiza transcripción exhaustiva celda por celda de tablas, subíndices, unidades y esquemas.'
+    : runtime.ocrQuality === 'fast'
+      ? 'Prioriza velocidad y extracción directa de párrafos y encabezados clave.'
+      : 'Mantén un equilibrio entre precisión técnica de fórmulas y velocidad de transcripción.';
+
+  const timeoutMs = Math.max(10_000, (runtime.ocrTimeoutSeconds || 45) * 1000);
+
   try {
     const response = await Promise.race([
       ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: targetModel,
         contents: {
           parts: [
             {
@@ -91,21 +117,22 @@ async function fallbackGeminiPdfOcr(pdfBuffer: Buffer, fileName: string): Promis
             },
             {
               text: `Extrae y transcribe fielmente TODO el texto técnico, tablas, encabezados y fórmulas matemáticas del documento PDF "${fileName}".
+${qualityNote}
 Reglas obligatorias:
 1. Separa cada página con un encabezado exacto: "## PÁGINA 1", "## PÁGINA 2", etc.
-2. Convierte todas las ecuaciones a LaTeX: en línea usa $...$ y bloques aislados usa $$...$$.
+${latexRule}
 3. Preserva fielmente todos los nombres de materiales, normas, valores numéricos y secciones.
-4. Devuelve únicamente el contenido en Markdown limpio sin comentarios introductorios.`
+4. Devuelve únicamente el contenido en Markdown limpio sin comentarios introductorios.${pageLimitRule}`
             }
           ]
         }
       }),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout en OCR Gemini PDF')), 45000))
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout (${runtime.ocrTimeoutSeconds}s) en OCR Visión (${targetModel})`)), timeoutMs))
     ]);
 
     return response.text?.trim() || null;
   } catch (error: any) {
-    console.warn(`Error en fallback Gemini PDF OCR para ${fileName}:`, error?.message || error);
+    console.warn(`Error en fallback Vision PDF OCR (${targetModel}) para ${fileName}:`, error?.message || error);
     return null;
   }
 }
@@ -151,6 +178,8 @@ export async function extractPdfToLibraryFiles(
     console.warn(`[PDF Extraction] unpdf failed for ${fileName}:`, pdfErr?.message || pdfErr);
   }
 
+  const runtime = getRuntimeSettings();
+  const maxOcrBytes = Math.max(1, runtime.ocrMaxFileSizeMb || 18) * 1024 * 1024;
   const combinedChars = pageTexts.join('').replace(/\s+/g, '').length;
   let bodyMarkdown = '';
 
@@ -167,16 +196,21 @@ export async function extractPdfToLibraryFiles(
       })
       .join('\n\n---\n\n');
     bodyMarkdown = normalizeFormulasToLatex(bodyMarkdown);
-  } else if (options.useGeminiFallback !== false && pdfBuffer.length < 18 * 1024 * 1024) {
-    // Fallback to Gemini multimodal PDF OCR if scanned / no embedded text
-    const ocrResult = await fallbackGeminiPdfOcr(pdfBuffer, fileName);
+  } else if (options.useGeminiFallback !== false && runtime.visionOcrEnabled && pdfBuffer.length <= maxOcrBytes) {
+    // Fallback to configured Vision multimodal PDF OCR if scanned / no embedded text
+    const ocrResult = await fallbackGeminiPdfOcr(pdfBuffer, fileName, totalPages);
     if (ocrResult) {
       bodyMarkdown = ocrResult;
     }
   }
 
   if (!bodyMarkdown.trim()) {
-    bodyMarkdown = `## PÁGINA 1\nDocumento PDF "${fileName}" indexado (${(pdfBuffer.length / 1024).toFixed(1)} KB). No se detectó capa de texto seleccionable en el archivo.`;
+    const reason = !runtime.visionOcrEnabled
+      ? 'OCR por Visión desactivado en Ajustes.'
+      : pdfBuffer.length > maxOcrBytes
+        ? `El archivo (${(pdfBuffer.length / (1024 * 1024)).toFixed(1)} MB) supera el límite OCR configurado (${runtime.ocrMaxFileSizeMb} MB).`
+        : 'No se detectó capa de texto seleccionable en el archivo.';
+    bodyMarkdown = `## PÁGINA 1\nDocumento PDF "${fileName}" indexado (${(pdfBuffer.length / 1024).toFixed(1)} KB). ${reason}`;
   }
 
   const extractedMarkdown = `# ${cleanTitle.toUpperCase()}
@@ -261,7 +295,7 @@ ${bodyMarkdown}
     pages: totalPages,
     author: 'Documento PDF Indexado',
     isExample: false,
-    model: 'text-embedding-004 (768-D)',
+    model: runtime.embeddingModel || 'text-embedding-004 (768-D)',
     chunkStrategy: options.chunkStrategy || 'semantic',
     chunkSize,
     chunkOverlap,

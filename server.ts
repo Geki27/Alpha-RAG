@@ -21,6 +21,7 @@ import {
 } from './src/server/extractionEngine';
 import { executeRagPipeline, executeWebRetrieval } from './src/server/ragPipeline';
 import { detectAvailableModels } from './src/server/modelsDetector';
+import { getPublicSettings, updateRuntimeSettings, resetRuntimeSettings } from './src/server/settingsStore';
 import { AVAILABLE_MODELS } from './src/types/models';
 
 const app = express();
@@ -135,27 +136,60 @@ app.get('/api/models', async (_req, res) => {
     res.json(detection);
   } catch (error: any) {
     console.error('Error autodetectando modelos:', error);
+  res.json({
+    success: true,
+    models: AVAILABLE_MODELS,
+    providers: {
+      google: {
+        active: true,
+        authenticated: Boolean(process.env.GEMINI_API_KEY),
+        label: 'Google AI Studio',
+        status: 'Online (Catálogo Google AI)',
+        detectedCount: 5
+      },
+      nvidia: {
+        active: true,
+        authenticated: Boolean(process.env.NVIDIA_NIM_API_KEY || process.env.NVIDIA_API_KEY),
+        label: 'NVIDIA NIM Microservices',
+        status: 'Online (Catálogo NVIDIA NIM)',
+        detectedCount: 5
+      }
+    },
+    totalDetected: AVAILABLE_MODELS.length
+  });
+  }
+});
+
+// ----------------------------------------------------
+// API ROUTES: RUNTIME SETTINGS & PROVIDER CREDENTIALS
+// ----------------------------------------------------
+app.get('/api/settings', (_req, res) => {
+  try {
+    res.json({ success: true, ...getPublicSettings() });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Error leyendo configuración' });
+  }
+});
+
+app.put('/api/settings', async (req, res) => {
+  try {
+    const updated = updateRuntimeSettings(req.body || {});
+    const detection = await detectAvailableModels().catch(() => null);
     res.json({
       success: true,
-      models: AVAILABLE_MODELS,
-      providers: {
-        google: {
-          active: true,
-          authenticated: Boolean(process.env.GEMINI_API_KEY),
-          label: 'Google AI Studio',
-          status: 'Online (Catálogo Google AI)',
-          detectedCount: 5
-        },
-        nvidia: {
-          active: true,
-          authenticated: Boolean(process.env.NVIDIA_NIM_API_KEY || process.env.NVIDIA_API_KEY),
-          label: 'NVIDIA NIM Microservices',
-          status: 'Online (Catálogo NVIDIA NIM)',
-          detectedCount: 5
-        }
-      },
-      totalDetected: AVAILABLE_MODELS.length
+      ...updated,
+      detection
     });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Error guardando configuración' });
+  }
+});
+
+app.post('/api/settings/reset', (_req, res) => {
+  try {
+    res.json({ success: true, ...resetRuntimeSettings() });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Error restableciendo configuración' });
   }
 });
 

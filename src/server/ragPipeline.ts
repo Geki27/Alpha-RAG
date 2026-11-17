@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { ROOT_LIBRARY_DIR, ensureLibraryDirectories, getPhysicalLibraryTree } from './libraryStorage';
+import { getRuntimeSettings } from './settingsStore';
 import { GroundedCitation } from '../types/rag';
 
 export type RetrievalScope = 'local' | 'web' | 'ambas';
@@ -14,6 +15,8 @@ export interface RagQueryPayload {
   thinking?: boolean;
   effort?: 'minimal' | 'low' | 'medium' | 'high' | 'max';
   topK?: number;
+  temperature?: number;
+  rerankEnabled?: boolean;
   attachments?: Array<{
     id: string;
     type: string;
@@ -956,7 +959,9 @@ async function synthesizeWithGoogleAi(
   effort: string,
   scope: RetrievalScope,
   isConversational = false,
-  availableLocalBooks: string[] = []
+  availableLocalBooks: string[] = [],
+  temperature = 0.1,
+  timeoutMs = 45000
 ): Promise<{ text: string; searchGroundingCitations: GroundedCitation[]; webQueries: string[] }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -991,6 +996,7 @@ async function synthesizeWithGoogleAi(
     : '';
 
   const config: Record<string, any> = {
+    temperature,
     systemInstruction: `Eres Alpha RAG, el motor de inteligencia técnica de ingeniería y asistente de investigación de nivel profesional.
 
 Directrices de respuesta:
@@ -1042,7 +1048,6 @@ Directrices de respuesta:
     promptContent = `CONSULTA:\n${userQuery}`;
   }
 
-  const timeoutMs = 30000;
   let response: any;
 
   // Helper to call generateContent with retry for transient 503 or 429
@@ -1056,7 +1061,7 @@ Directrices de respuesta:
             contents: promptContent,
             config: callConfig
           }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout de 30s al conectar con Google Gemini (${targetModel})`)), timeoutMs))
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout de ${Math.round(timeoutMs / 1000)}s al conectar con Google Gemini (${targetModel})`)), timeoutMs))
         ]);
         return res;
       } catch (err: any) {
@@ -1146,7 +1151,9 @@ async function synthesizeWithNvidiaNim(
   effort: string,
   scope: RetrievalScope,
   isConversational = false,
-  availableLocalBooks: string[] = []
+  availableLocalBooks: string[] = [],
+  temperatureOverride?: number,
+  timeoutMs = 35000
 ): Promise<string> {
   const apiKey = process.env.NVIDIA_NIM_API_KEY || process.env.NVIDIA_API_KEY;
 
@@ -1188,12 +1195,14 @@ Resuelve la consulta de ingeniería con rigor técnico y matemático:
       { role: 'system', content: systemMessage },
       { role: 'user', content: userContent }
     ],
-    temperature: effort === 'minimal' ? 0.05 : effort === 'low' ? 0.1 : effort === 'high' || effort === 'max' ? 0.4 : 0.2,
+    temperature: temperatureOverride !== undefined
+      ? temperatureOverride
+      : (effort === 'minimal' ? 0.05 : effort === 'low' ? 0.1 : effort === 'high' || effort === 'max' ? 0.4 : 0.2),
     max_tokens: 2048,
   };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
@@ -1210,7 +1219,7 @@ Resuelve la consulta de ingeniería con rigor técnico y matemático:
   } catch (netErr: any) {
     clearTimeout(timer);
     if (netErr.name === 'AbortError') {
-      throw new Error(`Timeout de 25s al consultar el microservicio NVIDIA NIM (${modelId}).`);
+      throw new Error(`Timeout de ${Math.round(timeoutMs / 1000)}s al consultar el microservicio NVIDIA NIM (${modelId}).`);
     }
     throw netErr;
   } finally {
@@ -1264,20 +1273,40 @@ export async function executeRagPipeline(payload: RagQueryPayload): Promise<RagQ
     queryText = queryText.replace(/\[Alcance:\s*[^\]]+\]\s*/gi, '').trim();
   }
 
+  const runtime = getRuntimeSettings();
   const scope: RetrievalScope = resolvedScope;
-  const modelId = payload.modelId || 'gemini-2.5-flash';
-  const provider = payload.provider || (
-    modelId.startsWith('meta/') || 
-    modelId.startsWith('deepseek') || 
-    modelId.startsWith('mistral') || 
-    modelId.startsWith('qwen') || 
-    modelId.startsWith('nvidia') 
-      ? 'nvidia' 
-      : 'google'
-  );
+  const requestedChatModel = payload.modelId || runtime.chatModel || 'gemini-2.5-flash';
+  const modelId =
+    (scope === 'web' && runtime.webSearchModel && runtime.webSearchModel !== 'auto')
+      ? runtime.webSearchModel
+      : requestedChatModel;
+  const provider =
+    (scope === 'web' && runtime.webSearchModel && runtime.webSearchModel !== 'auto')
+      ? (
+          modelId.startsWith('meta/') ||
+          modelId.startsWith('deepseek') ||
+          modelId.startsWith('mistral') ||
+          modelId.startsWith('qwen') ||
+          modelId.startsWith('nvidia')
+            ? 'nvidia'
+            : 'google'
+        )
+      : (
+          payload.provider || (
+            modelId.startsWith('meta/') ||
+            modelId.startsWith('deepseek') ||
+            modelId.startsWith('mistral') ||
+            modelId.startsWith('qwen') ||
+            modelId.startsWith('nvidia')
+              ? 'nvidia'
+              : 'google'
+          )
+        );
   const thinking = payload.thinking !== undefined ? payload.thinking : true;
   const effort = payload.effort || 'medium';
-  const topK = payload.topK || 4;
+  const topK = payload.topK || runtime.topK || 5;
+  const temperature = payload.temperature !== undefined ? payload.temperature : runtime.temperature;
+  const llmTimeoutMs = Math.max(10_000, (runtime.llmTimeoutSeconds || 45) * 1000);
 
   const isConversational = detectQueryIntent(queryText) === 'conversational';
 
@@ -1316,14 +1345,16 @@ export async function executeRagPipeline(payload: RagQueryPayload): Promise<RagQ
   try {
     if (provider === 'google') {
       const googleResult = await synthesizeWithGoogleAi(
-        modelId, 
-        queryText, 
-        contextPrompt, 
-        thinking, 
-        effort, 
+        modelId,
+        queryText,
+        contextPrompt,
+        thinking,
+        effort,
         scope,
         isConversational,
-        availableLocalBooks
+        availableLocalBooks,
+        temperature,
+        llmTimeoutMs
       );
       finalContent = googleResult.text;
 
@@ -1335,14 +1366,16 @@ export async function executeRagPipeline(payload: RagQueryPayload): Promise<RagQ
       }
     } else if (provider === 'nvidia') {
       finalContent = await synthesizeWithNvidiaNim(
-        modelId, 
-        queryText, 
-        contextPrompt, 
-        thinking, 
-        effort, 
+        modelId,
+        queryText,
+        contextPrompt,
+        thinking,
+        effort,
         scope,
         isConversational,
-        availableLocalBooks
+        availableLocalBooks,
+        temperature,
+        llmTimeoutMs
       );
     } else {
       throw new Error(`Proveedor de modelo no soportado: ${provider}`);
@@ -1359,7 +1392,7 @@ export async function executeRagPipeline(payload: RagQueryPayload): Promise<RagQ
         retrievalMs,
         chunksExamined: isConversational ? 0 : chunksExamined,
         topKUsed: isConversational ? 0 : topK,
-        similarityThreshold: 0.50,
+        similarityThreshold: runtime.similarityThreshold,
         model: `${provider === 'nvidia' ? 'NVIDIA NIM' : 'Google AI'} · ${modelId}`,
         provider,
         searchScope: scope,
@@ -1380,7 +1413,7 @@ export async function executeRagPipeline(payload: RagQueryPayload): Promise<RagQ
         retrievalMs,
         chunksExamined: Math.max(chunksExamined, 0),
         topKUsed: topK,
-        similarityThreshold: 0.80,
+        similarityThreshold: runtime.similarityThreshold,
         model: `${provider === 'nvidia' ? 'NVIDIA NIM' : 'Google AI'} · ${modelId}`,
         provider,
         searchScope: scope,

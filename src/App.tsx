@@ -93,21 +93,36 @@ export default function App() {
   const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(true);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>('medium');
   const [searchScope, setSearchScope] = useState<SearchScope>('local');
-  const [ragModel, setRagModel] = useState<string>('gemini-3.8-flash');
+  const [ragModel, setRagModel] = useState<string>('gemini-2.5-flash');
   const [topK, setTopK] = useState<number>(5);
   const [temperature, setTemperature] = useState<number>(0.1);
   const [rerankEnabled, setRerankEnabled] = useState<boolean>(true);
 
-  // Auto-detect models on app load
+  // Auto-detect models & load persisted server settings on app load
   useEffect(() => {
-    fetch('/api/models')
-      .then(res => res.json())
-      .then(data => {
-        if (data && Array.isArray(data.models) && data.models.length > 0) {
-          setAvailableModels(data.models);
+    Promise.all([
+      fetch('/api/models').then(res => res.json()).catch(() => null),
+      fetch('/api/settings').then(res => res.json()).catch(() => null),
+    ]).then(([modelsData, settingsData]) => {
+      const modelsList: ModelDefinition[] =
+        modelsData && Array.isArray(modelsData.models) && modelsData.models.length > 0
+          ? modelsData.models
+          : AVAILABLE_MODELS;
+
+      setAvailableModels(modelsList);
+
+      if (settingsData?.success && settingsData.settings) {
+        const s = settingsData.settings;
+        if (typeof s.topK === 'number') setTopK(s.topK);
+        if (typeof s.temperature === 'number') setTemperature(s.temperature);
+        if (typeof s.rerankEnabled === 'boolean') setRerankEnabled(s.rerankEnabled);
+        if (typeof s.chatModel === 'string' && s.chatModel) {
+          setRagModel(s.chatModel);
+          const matched = modelsList.find(m => m.id === s.chatModel);
+          if (matched) setSelectedModel(matched);
         }
-      })
-      .catch(() => {});
+      }
+    });
   }, []);
 
   // Generating State
@@ -285,7 +300,9 @@ export default function App() {
           provider: selectedModel.provider,
           thinking: thinkingEnabled,
           effort: effortLevel,
-          topK
+          topK,
+          temperature,
+          rerankEnabled
         })
       });
 
@@ -543,6 +560,10 @@ export default function App() {
             onClose={() => setIsSettingsOpen(false)}
             activeTab={activeTab}
             setActiveTab={setActiveTab}
+            availableModels={availableModels}
+            setAvailableModels={setAvailableModels}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
             ragModel={ragModel}
             setRagModel={setRagModel}
             topK={topK}
