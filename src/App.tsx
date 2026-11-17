@@ -51,6 +51,8 @@ interface StoredUiPrefs {
   temperature?: number;
   rerankEnabled?: boolean;
   hideExamples?: boolean;
+  activeTab?: ActiveTab;
+  sidebarOpen?: boolean;
   chunkStrategy?: ChunkStrategyType;
   chunkSize?: number;
   chunkOverlap?: number;
@@ -78,11 +80,19 @@ function writeStoredUiPrefs(prefs: StoredUiPrefs): void {
 }
 
 export default function App() {
-  // Navigation State
-  const [activeTab, setActiveTab] = useState<ActiveTab>('query');
+  const initialUiPrefsRef = useRef<StoredUiPrefs | null>(null);
+  if (initialUiPrefsRef.current === null) {
+    initialUiPrefsRef.current = readStoredUiPrefs();
+  }
+  const initialUiPrefs = initialUiPrefsRef.current;
 
-  // Sidebar & Sessions State
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  // Navigation & Sidebar State
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    initialUiPrefs.activeTab || 'query'
+  );
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(
+    typeof initialUiPrefs.sidebarOpen === 'boolean' ? initialUiPrefs.sidebarOpen : false
+  );
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     try {
       const saved = localStorage.getItem('aether_rag_sessions_v1');
@@ -95,12 +105,6 @@ export default function App() {
     }
     return INITIAL_SESSIONS;
   });
-
-  const initialUiPrefsRef = useRef<StoredUiPrefs | null>(null);
-  if (initialUiPrefsRef.current === null) {
-    initialUiPrefsRef.current = readStoredUiPrefs();
-  }
-  const initialUiPrefs = initialUiPrefsRef.current;
 
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
     try {
@@ -188,6 +192,7 @@ export default function App() {
   );
 
   const dirtyFieldsRef = useRef<Set<keyof RuntimeTaskSettings>>(new Set());
+  const hasHydratedFromServerRef = useRef<boolean>(false);
   const hasPendingWorkspaceSaveRef = useRef<boolean>(false);
   const availableModelsRef = useRef<ModelDefinition[]>(availableModels);
   availableModelsRef.current = availableModels;
@@ -198,6 +203,16 @@ export default function App() {
     fields.forEach((f) => dirtyFieldsRef.current.add(f));
     hasPendingWorkspaceSaveRef.current = true;
   }, []);
+
+  const handleSetActiveTab = useCallback((tab: ActiveTab) => {
+    markSettingDirty('activeTab');
+    setActiveTab(tab);
+  }, [markSettingDirty]);
+
+  const handleToggleSidebar = useCallback(() => {
+    markSettingDirty('sidebarOpen');
+    setIsSidebarOpen(prev => !prev);
+  }, [markSettingDirty]);
 
   const handleSetParticleSpeed = useCallback((v: number) => {
     markSettingDirty('particleSpeed');
@@ -288,6 +303,9 @@ export default function App() {
     thinkingEnabled,
     effortLevel,
     searchScope,
+    hideExamples,
+    activeTab,
+    sidebarOpen: isSidebarOpen,
     chunkStrategy,
     chunkSize,
     chunkOverlap,
@@ -295,20 +313,33 @@ export default function App() {
     activeDiscipline,
   };
 
-  const flushWorkspaceSettingsToServer = useCallback(() => {
+  const flushWorkspaceSettingsToServer = useCallback((useBeacon = false) => {
     if (!hasPendingWorkspaceSaveRef.current) return;
     hasPendingWorkspaceSaveRef.current = false;
-    fetch('/api/settings', {
-      method: 'PUT',
+    const bodyStr = JSON.stringify({
+      settings: latestWorkspacePayloadRef.current,
+    });
+
+    if (useBeacon && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      try {
+        const blob = new Blob([bodyStr], { type: 'application/json' });
+        if (navigator.sendBeacon('/api/settings/sync', blob)) {
+          return;
+        }
+      } catch {}
+    }
+
+    fetch('/api/settings/sync', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
-      body: JSON.stringify({
-        settings: latestWorkspacePayloadRef.current,
-      }),
-    }).catch(() => {});
+      body: bodyStr,
+    }).catch((err) => {
+      console.warn('[App Persistence] Error guardando ajustes en servidor:', err);
+    });
   }, []);
 
-  // Hydrate persisted server settings immediately (fast local disk read, decoupled from external /api/models)
+  // Hydrate persisted server settings immediately with strict server priority over localStorage
   useEffect(() => {
     let cancelled = false;
 
@@ -331,6 +362,8 @@ export default function App() {
           if (!dirty.has('effortLevel') && typeof s.effortLevel === 'string') setEffortLevel(s.effortLevel as EffortLevel);
           if (!dirty.has('searchScope') && typeof s.searchScope === 'string') setSearchScope(s.searchScope as SearchScope);
           if (!dirty.has('hideExamples') && typeof s.hideExamples === 'boolean') setHideExamples(s.hideExamples);
+          if (!dirty.has('activeTab') && typeof s.activeTab === 'string') setActiveTab(s.activeTab as ActiveTab);
+          if (!dirty.has('sidebarOpen') && typeof s.sidebarOpen === 'boolean') setIsSidebarOpen(s.sidebarOpen);
           if (!dirty.has('chunkStrategy') && typeof s.chunkStrategy === 'string') setChunkStrategy(s.chunkStrategy as ChunkStrategyType);
           if (!dirty.has('chunkSize') && typeof s.chunkSize === 'number') setChunkSize(s.chunkSize);
           if (!dirty.has('chunkOverlap') && typeof s.chunkOverlap === 'number') setChunkOverlap(s.chunkOverlap);
@@ -341,9 +374,41 @@ export default function App() {
             const matched = availableModelsRef.current.find((m) => m.id === s.chatModel);
             if (matched) setSelectedModel(matched);
           }
+
+          hasHydratedFromServerRef.current = true;
+
+          // Sync browser cache strictly from server truth (preserving only any active user edits)
+          const baseSnapshot: StoredUiPrefs = {
+            chatModel: s.chatModel,
+            topK: s.topK,
+            temperature: s.temperature,
+            rerankEnabled: s.rerankEnabled,
+            particleSpeed: s.particleSpeed,
+            pointSize: s.pointSize,
+            vignetteDarkness: s.vignetteDarkness,
+            lockedIntrospect: s.lockedIntrospect,
+            thinkingEnabled: s.thinkingEnabled,
+            effortLevel: s.effortLevel,
+            searchScope: s.searchScope,
+            hideExamples: s.hideExamples,
+            activeTab: s.activeTab,
+            sidebarOpen: s.sidebarOpen,
+            chunkStrategy: s.chunkStrategy,
+            chunkSize: s.chunkSize,
+            chunkOverlap: s.chunkOverlap,
+            uploadDiscipline: s.uploadDiscipline,
+            activeDiscipline: s.activeDiscipline,
+          };
+          if (dirty.size === 0) {
+            writeStoredUiPrefs(baseSnapshot);
+          }
+        } else {
+          hasHydratedFromServerRef.current = true;
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        hasHydratedFromServerRef.current = true;
+      });
 
     // Auto-detect models independently without blocking settings hydration
     fetch('/api/models', { cache: 'no-store' })
@@ -369,8 +434,9 @@ export default function App() {
     };
   }, []);
 
-  // Mirror UI preferences synchronously to localStorage on every change
+  // Mirror UI preferences to localStorage only after server hydration or explicit user interaction
   useEffect(() => {
+    if (!hasHydratedFromServerRef.current && !hasPendingWorkspaceSaveRef.current) return;
     writeStoredUiPrefs({
       chatModel: ragModel,
       topK,
@@ -384,6 +450,8 @@ export default function App() {
       effortLevel,
       searchScope,
       hideExamples,
+      activeTab,
+      sidebarOpen: isSidebarOpen,
       chunkStrategy,
       chunkSize,
       chunkOverlap,
@@ -403,6 +471,8 @@ export default function App() {
     effortLevel,
     searchScope,
     hideExamples,
+    activeTab,
+    isSidebarOpen,
     chunkStrategy,
     chunkSize,
     chunkOverlap,
@@ -415,8 +485,8 @@ export default function App() {
     if (!hasPendingWorkspaceSaveRef.current) return;
 
     const timer = setTimeout(() => {
-      flushWorkspaceSettingsToServer();
-    }, 120);
+      flushWorkspaceSettingsToServer(false);
+    }, 80);
 
     return () => clearTimeout(timer);
   }, [
@@ -431,6 +501,8 @@ export default function App() {
     thinkingEnabled,
     effortLevel,
     searchScope,
+    activeTab,
+    isSidebarOpen,
     chunkStrategy,
     chunkSize,
     chunkOverlap,
@@ -439,10 +511,10 @@ export default function App() {
     flushWorkspaceSettingsToServer,
   ]);
 
-  // Flush any unsent settings change immediately on tab reload / close
+  // Flush any unsent settings change immediately on tab reload / close via sendBeacon + keepalive
   useEffect(() => {
     const handleFlush = () => {
-      flushWorkspaceSettingsToServer();
+      flushWorkspaceSettingsToServer(true);
     };
     window.addEventListener('pagehide', handleFlush);
     window.addEventListener('beforeunload', handleFlush);
@@ -508,7 +580,7 @@ export default function App() {
   }, []);
 
   const handleToggleHideExamples = useCallback(async (nextHide: boolean) => {
-    markSettingDirty('hideExamples');
+    dirtyFieldsRef.current.add('hideExamples');
     setHideExamples(nextHide);
     try {
       if (nextHide) {
@@ -528,7 +600,7 @@ export default function App() {
       console.error('Error actualizando visibilidad de ejemplos:', err);
     }
     await refreshLibraryBooks();
-  }, [markSettingDirty, refreshLibraryBooks]);
+  }, [refreshLibraryBooks]);
 
   useEffect(() => {
     refreshLibraryBooks();
@@ -749,6 +821,26 @@ export default function App() {
     setIsPdfModalOpen(true);
   };
 
+  const handleSettingsSyncedFromModal = useCallback((s: RuntimeTaskSettings) => {
+    hasPendingWorkspaceSaveRef.current = false;
+    dirtyFieldsRef.current.clear();
+    if (typeof s.chatModel === 'string' && s.chatModel) {
+      setRagModel(s.chatModel);
+      const matched = availableModelsRef.current.find((m) => m.id === s.chatModel);
+      if (matched) setSelectedModel(matched);
+    }
+    if (typeof s.topK === 'number') setTopK(s.topK);
+    if (typeof s.temperature === 'number') setTemperature(s.temperature);
+    if (typeof s.rerankEnabled === 'boolean') setRerankEnabled(s.rerankEnabled);
+    if (typeof s.particleSpeed === 'number') setParticleSpeed(s.particleSpeed);
+    if (typeof s.pointSize === 'number') setPointSize(s.pointSize);
+    if (typeof s.vignetteDarkness === 'number') setVignetteDarkness(s.vignetteDarkness);
+    if (typeof s.lockedIntrospect === 'boolean') setLockedIntrospect(s.lockedIntrospect);
+    if (typeof s.hideExamples === 'boolean') setHideExamples(s.hideExamples);
+    if (typeof s.activeTab === 'string') setActiveTab(s.activeTab as ActiveTab);
+    if (typeof s.sidebarOpen === 'boolean') setIsSidebarOpen(s.sidebarOpen);
+  }, []);
+
   const handleResetDefaults = useCallback(() => {
     dirtyFieldsRef.current.clear();
     hasPendingWorkspaceSaveRef.current = false;
@@ -763,6 +855,8 @@ export default function App() {
     setTemperature(0.1);
     setRerankEnabled(true);
     setHideExamples(false);
+    setActiveTab('query');
+    setIsSidebarOpen(false);
     setChunkStrategy('semantic');
     setChunkSize(512);
     setChunkOverlap(64);
@@ -876,6 +970,8 @@ export default function App() {
                 setDocuments={setDocuments}
                 onRefreshBooks={refreshLibraryBooks}
                 onOpenLibraryModal={() => setIsLibraryModalOpen(true)}
+                hideExamples={hideExamples}
+                onToggleHideExamples={handleToggleHideExamples}
                 chunkStrategy={chunkStrategy}
                 onChangeChunkStrategy={handleSetChunkStrategy}
                 chunkSize={chunkSize}
@@ -900,7 +996,7 @@ export default function App() {
       {/* Collapsible Conversation Sessions Sidebar */}
       <ConversationSidebar
         isOpen={isSidebarOpen}
-        onToggle={() => setIsSidebarOpen(prev => !prev)}
+        onToggle={handleToggleSidebar}
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSelectSession={handleSelectSession}
@@ -941,7 +1037,7 @@ export default function App() {
             isOpen={isSettingsOpen}
             onClose={() => setIsSettingsOpen(false)}
             activeTab={activeTab}
-            setActiveTab={setActiveTab}
+            setActiveTab={handleSetActiveTab}
             availableModels={availableModels}
             setAvailableModels={setAvailableModels}
             selectedModel={selectedModel}
@@ -960,6 +1056,7 @@ export default function App() {
             setPointSize={handleSetPointSize}
             vignetteDarkness={vignetteDarkness}
             setVignetteDarkness={handleSetVignetteDarkness}
+            onSettingsSyncedFromModal={handleSettingsSyncedFromModal}
             onResetDefaults={handleResetDefaults}
             onRefreshBooks={refreshLibraryBooks}
           />

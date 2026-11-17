@@ -61,6 +61,7 @@ interface SettingsModalProps {
   setPointSize: (p: number) => void;
   vignetteDarkness: number;
   setVignetteDarkness: (v: number) => void;
+  onSettingsSyncedFromModal?: (settings: RuntimeTaskSettings) => void;
   onResetDefaults: () => void;
   onRefreshBooks?: () => Promise<void> | void;
 }
@@ -126,6 +127,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setPointSize,
   vignetteDarkness,
   setVignetteDarkness,
+  onSettingsSyncedFromModal,
   onResetDefaults,
   onRefreshBooks,
 }) => {
@@ -166,31 +168,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const latestTaskSettingsRef = useRef<RuntimeTaskSettings>(taskSettings);
   latestTaskSettingsRef.current = taskSettings;
 
-  const flushTaskSettingsToServer = () => {
+  const flushTaskSettingsToServer = (useBeacon = false) => {
     if (!hasPendingTaskSaveRef.current) return;
     hasPendingTaskSaveRef.current = false;
     const latest = latestTaskSettingsRef.current;
-    fetch('/api/settings', {
-      method: 'PUT',
+    const bodyStr = JSON.stringify({
+      settings: {
+        chatModel: latest.chatModel,
+        visionOcrModel: latest.visionOcrModel,
+        webSearchModel: latest.webSearchModel,
+        embeddingModel: latest.embeddingModel,
+        visionOcrEnabled: latest.visionOcrEnabled,
+        ocrMaxPagesPerDoc: latest.ocrMaxPagesPerDoc,
+        ocrMaxFileSizeMb: latest.ocrMaxFileSizeMb,
+        ocrQuality: latest.ocrQuality,
+        ocrTimeoutSeconds: latest.ocrTimeoutSeconds,
+        ocrStrictLatex: latest.ocrStrictLatex,
+        similarityThreshold: latest.similarityThreshold,
+        llmTimeoutSeconds: latest.llmTimeoutSeconds,
+      },
+    });
+
+    if (useBeacon && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      try {
+        const blob = new Blob([bodyStr], { type: 'application/json' });
+        if (navigator.sendBeacon('/api/settings/sync', blob)) {
+          return;
+        }
+      } catch {}
+    }
+
+    fetch('/api/settings/sync', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
-      body: JSON.stringify({
-        settings: {
-          chatModel: latest.chatModel,
-          visionOcrModel: latest.visionOcrModel,
-          webSearchModel: latest.webSearchModel,
-          embeddingModel: latest.embeddingModel,
-          visionOcrEnabled: latest.visionOcrEnabled,
-          ocrMaxPagesPerDoc: latest.ocrMaxPagesPerDoc,
-          ocrMaxFileSizeMb: latest.ocrMaxFileSizeMb,
-          ocrQuality: latest.ocrQuality,
-          ocrTimeoutSeconds: latest.ocrTimeoutSeconds,
-          ocrStrictLatex: latest.ocrStrictLatex,
-          similarityThreshold: latest.similarityThreshold,
-          llmTimeoutSeconds: latest.llmTimeoutSeconds,
-        },
-      }),
-    }).catch(() => {});
+      body: bodyStr,
+    }).catch((err) => {
+      console.warn('[SettingsModal Persistence] Error guardando ajustes:', err);
+    });
   };
 
   const updateTaskSetting = <K extends keyof RuntimeTaskSettings>(
@@ -264,8 +279,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!isOpen || !hasLoadedModalSettingsRef.current || !hasPendingTaskSaveRef.current) return;
 
     const timer = setTimeout(() => {
-      flushTaskSettingsToServer();
-    }, 120);
+      flushTaskSettingsToServer(false);
+    }, 80);
 
     return () => {
       clearTimeout(timer);
@@ -288,14 +303,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     const handleFlush = () => {
-      flushTaskSettingsToServer();
+      flushTaskSettingsToServer(true);
     };
     window.addEventListener('pagehide', handleFlush);
     window.addEventListener('beforeunload', handleFlush);
     return () => {
       window.removeEventListener('pagehide', handleFlush);
       window.removeEventListener('beforeunload', handleFlush);
-      flushTaskSettingsToServer();
+      flushTaskSettingsToServer(false);
     };
   }, []);
 
@@ -359,6 +374,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (data.settings) {
         latestTaskSettingsRef.current = data.settings;
         setTaskSettings(data.settings);
+        onSettingsSyncedFromModal?.(data.settings);
       }
       hasPendingTaskSaveRef.current = false;
       if (data.detection?.models && Array.isArray(data.detection.models) && data.detection.models.length > 0) {
@@ -370,10 +386,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const matchedModel = nextModelsList.find((m) => m.id === payloadSettings.chatModel);
       if (matchedModel) {
         setSelectedModel(matchedModel);
-        setRagModel(matchedModel.id);
-      } else {
-        setRagModel(payloadSettings.chatModel);
       }
+      setRagModel(payloadSettings.chatModel);
 
       setGeminiInput('');
       setNvidiaInput('');
@@ -438,6 +452,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (data?.success && data.settings) {
         latestTaskSettingsRef.current = data.settings;
         setTaskSettings(data.settings);
+        onSettingsSyncedFromModal?.(data.settings);
         const defaultChat = availableModels.find((m) => m.id === data.settings.chatModel);
         if (defaultChat) setSelectedModel(defaultChat);
         setRagModel(data.settings.chatModel);

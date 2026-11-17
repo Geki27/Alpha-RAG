@@ -4,21 +4,21 @@
   "fileName": "shigley_diseno_en_ingenieria_mecanica_10.pdf",
   "model": "text-embedding-004 (768-D)",
   "chunksCount": 2420,
-  "extractedAt": "2026-11-10T01:04:52.054Z",
+  "extractedAt": "2026-11-17T04:54:52.280Z",
   "chunks": [
     {
       "chunkIndex": 1,
       "section": "Principios y Fundamentos",
       "tokenCount": 86,
       "vector": [
-        -0.9001,
-        0.5921,
-        0.4766,
-        -0.2684,
-        -0.4384,
-        -0.9035,
-        0.5883,
-        0.1245
+        -0.5103,
+        -0.8878,
+        -0.9788,
+        0.6413,
+        -0.5991,
+        -0.327,
+        -0.1621,
+        -0.4441
       ],
       "textExcerpt": "# DISEÑO EN INGENIERÍA MECÁNICA DE SHIGLEY (10ma Edición)\n**Autores:** Richard G. Budynas, J. Keith Nisbett · McGraw-Hill Education\n**Disciplina:** Diseño Mecánico y Fatiga de Materiales\n\n---\n\n## CAPÍTULO 6: FALLA POR FATIGA RESULTANTE DE C..."
     },
@@ -27,14 +27,14 @@
       "section": "Formulaciones y Leyes Matemáticas",
       "tokenCount": 92,
       "vector": [
-        0.4736,
-        0.2057,
-        -0.1602,
-        -0.4979,
-        0.4649,
-        -0.4457,
-        -0.2629,
-        -0.7745
+        -0.9619,
+        0.5742,
+        -0.835,
+        -0.0139,
+        0.249,
+        0.6791,
+        -0.0924,
+        0.658
       ],
       "textExcerpt": "RGAS VARIABLES\n\nBajo esfuerzos cíclicos fluctuantes, la amplitud del esfuerzo alternante $\\sigma_a$ y el esfuerzo medio $\\sigma_m$ se definen como:\n\n$$\\sigma_a = \\left| \\frac{\\sigma_{\\max} - \\sigma_{\\min}}{2} \\right|$$\n$$\\sigma_m = \\frac{\\sigma_{\\max} + \\sigma_{\\min}}{2}$$\n\n### ..."
     }

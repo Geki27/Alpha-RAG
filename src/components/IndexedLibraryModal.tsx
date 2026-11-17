@@ -188,14 +188,11 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
           setDocuments(mappedDocs);
         }
       }
-      if (onRefreshBooks) {
-        await onRefreshBooks();
-      }
     } catch (err: any) {
       console.error('Error leyendo libros físicos desde /api/library/books:', err);
       setUploadError(err?.message || 'No se pudieron cargar los libros desde el servidor.');
     }
-  }, [setDocuments, onRefreshBooks]);
+  }, [setDocuments]);
 
   const handleToggleExamples = async (nextHide: boolean) => {
     setIsTogglingExamples(true);
@@ -233,10 +230,12 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
     setDeletingBookId(doc.id);
     setUploadError(null);
     try {
-      const res = await fetch(
-        `/api/library/book/${encodeURIComponent(disc)}/${encodeURIComponent(fileName)}`,
-        { method: 'DELETE', keepalive: true }
-      );
+      const res = await fetch('/api/library/book/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({ discipline: disc, fileName }),
+      });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || 'No se pudo eliminar el libro del disco.');

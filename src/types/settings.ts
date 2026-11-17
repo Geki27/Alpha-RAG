@@ -2,6 +2,7 @@ import { EffortLevel } from './models';
 
 export type OcrQualityLevel = 'fast' | 'balanced' | 'high';
 export type PersistedSearchScope = 'local' | 'web' | 'ambas';
+export type PersistedActiveTab = 'query' | 'vectors' | 'documents' | 'pipeline';
 
 export type ChunkStrategyType = 'semantic' | 'recursive' | 'sliding' | 'pages';
 
@@ -37,6 +38,8 @@ export interface RuntimeTaskSettings {
   searchScope: PersistedSearchScope;
   hideExamples: boolean;
   deletedSeedFiles: string[];
+  activeTab: PersistedActiveTab;
+  sidebarOpen: boolean;
 
   // Library ingestion & chunking preferences
   chunkStrategy: ChunkStrategyType;
@@ -99,6 +102,8 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeTaskSettings = {
   searchScope: 'local',
   hideExamples: false,
   deletedSeedFiles: [],
+  activeTab: 'query',
+  sidebarOpen: false,
 
   chunkStrategy: 'semantic',
   chunkSize: 512,

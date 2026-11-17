@@ -191,9 +191,17 @@ app.get('/api/settings', (_req, res) => {
   }
 });
 
-app.put('/api/settings', async (req, res) => {
+async function handleUpdateSettings(req: express.Request, res: express.Response) {
   try {
-    const body = req.body || {};
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+    body = body || {};
     const updated = updateRuntimeSettings(body);
     const shouldDetectModels = Boolean(body.apiKeys || body.detectModels);
     const detection = shouldDetectModels
@@ -207,7 +215,10 @@ app.put('/api/settings', async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Error guardando configuración' });
   }
-});
+}
+
+app.put('/api/settings', handleUpdateSettings);
+app.post('/api/settings/sync', express.text({ type: ['text/plain', 'application/json'], limit: '1mb' }), handleUpdateSettings);
 
 app.post('/api/settings/reset', (_req, res) => {
   try {
@@ -238,10 +249,8 @@ app.get('/api/library/books', (_req, res) => {
   }
 });
 
-// 1b. Delete a book from disk and remember seed deletion across restarts
-app.delete('/api/library/book/:discipline/:filename', (req, res) => {
+function handleDeleteLibraryBook(discipline: string, filename: string, res: express.Response) {
   try {
-    const { discipline, filename } = req.params;
     const { deleted, isSeed } = deleteBookFromLibrary(discipline, filename);
     if (isSeed) {
       const current = getRuntimeSettings();
@@ -253,6 +262,21 @@ app.delete('/api/library/book/:discipline/:filename', (req, res) => {
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Error eliminando libro' });
   }
+}
+
+// 1b. Delete a book from disk and remember seed deletion across restarts
+app.delete('/api/library/book/:discipline/:filename', (req, res) => {
+  const { discipline, filename } = req.params;
+  handleDeleteLibraryBook(discipline, filename, res);
+});
+
+app.post('/api/library/book/delete', (req, res) => {
+  const discipline = String(req.body?.discipline || '');
+  const filename = String(req.body?.fileName || req.body?.filename || '');
+  if (!discipline || !filename) {
+    return res.status(400).json({ success: false, error: 'Se requiere disciplina y nombre de archivo.' });
+  }
+  handleDeleteLibraryBook(discipline, filename, res);
 });
 
 // 1c. Restore default example books
@@ -316,6 +340,15 @@ app.post('/api/library/upload', upload.single('pdfFile'), async (req, res) => {
     if (!file) {
       return res.status(400).json({ success: false, error: 'No se recibió ningún archivo PDF en la solicitud.' });
     }
+
+    updateRuntimeSettings({
+      settings: {
+        uploadDiscipline: discipline,
+        chunkSize,
+        chunkOverlap,
+        chunkStrategy: chunkStrategy as any,
+      },
+    });
 
     const tempFilePath = file.path;
     const jobId = `job-${Date.now()}`;

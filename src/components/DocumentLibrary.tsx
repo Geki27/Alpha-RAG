@@ -26,6 +26,8 @@ interface DocumentLibraryProps {
   setDocuments?: React.Dispatch<React.SetStateAction<DocumentSource[]>>;
   onRefreshBooks?: () => Promise<void> | void;
   onOpenLibraryModal?: () => void;
+  hideExamples?: boolean;
+  onToggleHideExamples?: (nextHide: boolean) => Promise<void> | void;
   chunkStrategy?: ChunkStrategyType;
   onChangeChunkStrategy?: (strategy: ChunkStrategyType) => void;
   chunkSize?: number;
@@ -51,6 +53,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
   documents: externalDocs,
   onRefreshBooks,
   onOpenLibraryModal,
+  hideExamples = false,
+  onToggleHideExamples,
   chunkStrategy: chunkStrategyProp,
   onChangeChunkStrategy,
   chunkSize: chunkSizeProp,
@@ -103,10 +107,12 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
     setDeletingBookId(doc.id);
     setUploadError(null);
     try {
-      const res = await fetch(
-        `/api/library/book/${encodeURIComponent(disc)}/${encodeURIComponent(fileName)}`,
-        { method: 'DELETE', keepalive: true }
-      );
+      const res = await fetch('/api/library/book/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({ discipline: disc, fileName }),
+      });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || 'No se pudo eliminar el libro del disco.');
@@ -214,6 +220,21 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
               </option>
             ))}
           </select>
+
+          {onToggleHideExamples && (
+            <button
+              type="button"
+              onClick={() => onToggleHideExamples(!hideExamples)}
+              className={`px-3 py-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                hideExamples
+                  ? 'bg-white text-black border-white'
+                  : 'bg-white/[0.06] hover:bg-white/[0.12] text-neutral-200 border-white/15'
+              }`}
+              title={hideExamples ? 'Restaurar libros de ejemplo' : 'Ocultar libros de ejemplo'}
+            >
+              {hideExamples ? 'Restaurar ejemplos' : 'Quitar ejemplos'}
+            </button>
+          )}
 
           {onOpenLibraryModal && (
             <button

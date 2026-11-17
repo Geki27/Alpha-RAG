@@ -36,6 +36,13 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
     raw.chunkStrategy === 'pages'
       ? raw.chunkStrategy
       : base.chunkStrategy;
+  const activeTab =
+    raw.activeTab === 'query' ||
+    raw.activeTab === 'vectors' ||
+    raw.activeTab === 'documents' ||
+    raw.activeTab === 'pipeline'
+      ? raw.activeTab
+      : base.activeTab;
 
   return {
     chatModel: typeof raw.chatModel === 'string' && raw.chatModel.trim() ? raw.chatModel.trim() : base.chatModel,
@@ -67,6 +74,8 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
     deletedSeedFiles: Array.isArray(raw.deletedSeedFiles)
       ? raw.deletedSeedFiles.filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
       : base.deletedSeedFiles,
+    activeTab,
+    sidebarOpen: typeof raw.sidebarOpen === 'boolean' ? raw.sidebarOpen : base.sidebarOpen,
 
     chunkStrategy,
     chunkSize: Math.round(clampNumber(raw.chunkSize, 128, 2048, base.chunkSize)),
@@ -82,11 +91,30 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
   };
 }
 
+let writeSeq = 0;
+
 function writeSettingsAtomically(nextSettings: RuntimeTaskSettings): void {
   ensureLibraryDirectories();
-  const tmpPath = `${SETTINGS_FILE}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmpPath, JSON.stringify(nextSettings, null, 2), 'utf-8');
-  fs.renameSync(tmpPath, SETTINGS_FILE);
+  writeSeq = (writeSeq + 1) % 100000;
+  const serialized = JSON.stringify(nextSettings, null, 2);
+  const tmpPath = `${SETTINGS_FILE}.tmp-${process.pid}-${Date.now()}-${writeSeq}`;
+  try {
+    fs.writeFileSync(tmpPath, serialized, 'utf-8');
+    fs.renameSync(tmpPath, SETTINGS_FILE);
+  } catch (err: any) {
+    // Windows NTFS can throw EPERM/EBUSY when replacing an existing file locked briefly by indexer/AV
+    if (err?.code === 'EPERM' || err?.code === 'EBUSY' || err?.code === 'EACCES') {
+      fs.writeFileSync(SETTINGS_FILE, serialized, 'utf-8');
+    } else {
+      throw err;
+    }
+  } finally {
+    if (fs.existsSync(tmpPath)) {
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {}
+    }
+  }
 }
 
 export function getRuntimeSettings(): RuntimeTaskSettings {

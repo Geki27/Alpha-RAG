@@ -23,6 +23,8 @@
   "searchScope": "local",
   "hideExamples": false,
   "deletedSeedFiles": [],
+  "activeTab": "query",
+  "sidebarOpen": false,
   "chunkStrategy": "semantic",
   "chunkSize": 512,
   "chunkOverlap": 64,
