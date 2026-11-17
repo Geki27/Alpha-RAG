@@ -1,4 +1,7 @@
+import { EffortLevel } from './models';
+
 export type OcrQualityLevel = 'fast' | 'balanced' | 'high';
+export type PersistedSearchScope = 'local' | 'web' | 'ambas';
 
 export interface RuntimeTaskSettings {
   // Task-specific models
@@ -21,6 +24,15 @@ export interface RuntimeTaskSettings {
   rerankEnabled: boolean;
   similarityThreshold: number;
   llmTimeoutSeconds: number;
+
+  // WebGL Background & Workspace preferences
+  particleSpeed: number;
+  pointSize: number;
+  vignetteDarkness: number;
+  lockedIntrospect: boolean;
+  thinkingEnabled: boolean;
+  effortLevel: EffortLevel;
+  searchScope: PersistedSearchScope;
 }
 
 export interface ProviderKeyInfo {
@@ -65,4 +77,12 @@ export const DEFAULT_RUNTIME_SETTINGS: RuntimeTaskSettings = {
   rerankEnabled: true,
   similarityThreshold: 0.5,
   llmTimeoutSeconds: 45,
+
+  particleSpeed: 1.0,
+  pointSize: 10.0,
+  vignetteDarkness: 1.5,
+  lockedIntrospect: false,
+  thinkingEnabled: true,
+  effortLevel: 'medium',
+  searchScope: 'local',
 };

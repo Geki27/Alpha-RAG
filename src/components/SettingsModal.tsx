@@ -177,6 +177,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             topK,
             temperature,
             rerankEnabled,
+            particleSpeed,
+            pointSize,
+            vignetteDarkness,
           });
         }
         if (data.providers) {
@@ -208,6 +211,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         topK,
         temperature,
         rerankEnabled,
+        particleSpeed,
+        pointSize,
+        vignetteDarkness,
       };
 
       const apiKeysPayload: Record<string, string | boolean> = {};

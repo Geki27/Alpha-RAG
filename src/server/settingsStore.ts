@@ -23,6 +23,12 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
   const quality = raw.ocrQuality === 'fast' || raw.ocrQuality === 'balanced' || raw.ocrQuality === 'high'
     ? raw.ocrQuality
     : base.ocrQuality;
+  const effort = raw.effortLevel === 'minimal' || raw.effortLevel === 'low' || raw.effortLevel === 'medium' || raw.effortLevel === 'high' || raw.effortLevel === 'max'
+    ? raw.effortLevel
+    : base.effortLevel;
+  const scope = raw.searchScope === 'local' || raw.searchScope === 'web' || raw.searchScope === 'ambas'
+    ? raw.searchScope
+    : base.searchScope;
 
   return {
     chatModel: typeof raw.chatModel === 'string' && raw.chatModel.trim() ? raw.chatModel.trim() : base.chatModel,
@@ -42,6 +48,14 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
     rerankEnabled: typeof raw.rerankEnabled === 'boolean' ? raw.rerankEnabled : base.rerankEnabled,
     similarityThreshold: Number(clampNumber(raw.similarityThreshold, 0.1, 0.95, base.similarityThreshold).toFixed(2)),
     llmTimeoutSeconds: Math.round(clampNumber(raw.llmTimeoutSeconds, 10, 180, base.llmTimeoutSeconds)),
+
+    particleSpeed: Number(clampNumber(raw.particleSpeed, 0.1, 2.5, base.particleSpeed).toFixed(2)),
+    pointSize: Number(clampNumber(raw.pointSize, 2.0, 20.0, base.pointSize).toFixed(1)),
+    vignetteDarkness: Number(clampNumber(raw.vignetteDarkness, 0.5, 3.0, base.vignetteDarkness).toFixed(1)),
+    lockedIntrospect: typeof raw.lockedIntrospect === 'boolean' ? raw.lockedIntrospect : base.lockedIntrospect,
+    thinkingEnabled: typeof raw.thinkingEnabled === 'boolean' ? raw.thinkingEnabled : base.thinkingEnabled,
+    effortLevel: effort,
+    searchScope: scope,
   };
 }
 

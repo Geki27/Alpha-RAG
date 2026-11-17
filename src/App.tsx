@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useCallback, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
 import { Sparkles, Sliders } from 'lucide-react';
 import { ParticleBackground } from './components/background';
 import { QueryWorkspace } from './components/QueryWorkspace';
@@ -98,6 +98,8 @@ export default function App() {
   const [temperature, setTemperature] = useState<number>(0.1);
   const [rerankEnabled, setRerankEnabled] = useState<boolean>(true);
 
+  const hasHydratedSettingsRef = useRef<boolean>(false);
+
   // Auto-detect models & load persisted server settings on app load
   useEffect(() => {
     Promise.all([
@@ -116,14 +118,66 @@ export default function App() {
         if (typeof s.topK === 'number') setTopK(s.topK);
         if (typeof s.temperature === 'number') setTemperature(s.temperature);
         if (typeof s.rerankEnabled === 'boolean') setRerankEnabled(s.rerankEnabled);
+        if (typeof s.particleSpeed === 'number') setParticleSpeed(s.particleSpeed);
+        if (typeof s.pointSize === 'number') setPointSize(s.pointSize);
+        if (typeof s.vignetteDarkness === 'number') setVignetteDarkness(s.vignetteDarkness);
+        if (typeof s.lockedIntrospect === 'boolean') setLockedIntrospect(s.lockedIntrospect);
+        if (typeof s.thinkingEnabled === 'boolean') setThinkingEnabled(s.thinkingEnabled);
+        if (typeof s.effortLevel === 'string') setEffortLevel(s.effortLevel as EffortLevel);
+        if (typeof s.searchScope === 'string') setSearchScope(s.searchScope as SearchScope);
         if (typeof s.chatModel === 'string' && s.chatModel) {
           setRagModel(s.chatModel);
           const matched = modelsList.find(m => m.id === s.chatModel);
           if (matched) setSelectedModel(matched);
         }
       }
+
+      // Enable auto-persistence only after initial server hydration completes
+      setTimeout(() => {
+        hasHydratedSettingsRef.current = true;
+      }, 0);
     });
   }, []);
+
+  // Auto-persist workspace, RAG & WebGL background settings to server disk across restarts
+  useEffect(() => {
+    if (!hasHydratedSettingsRef.current) return;
+    const timer = setTimeout(() => {
+      fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            chatModel: selectedModel.id,
+            topK,
+            temperature,
+            rerankEnabled,
+            particleSpeed,
+            pointSize,
+            vignetteDarkness,
+            lockedIntrospect,
+            thinkingEnabled,
+            effortLevel,
+            searchScope,
+          },
+        }),
+      }).catch(() => {});
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [
+    selectedModel.id,
+    topK,
+    temperature,
+    rerankEnabled,
+    particleSpeed,
+    pointSize,
+    vignetteDarkness,
+    lockedIntrospect,
+    thinkingEnabled,
+    effortLevel,
+    searchScope,
+  ]);
 
   // Generating State
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
