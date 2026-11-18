@@ -802,7 +802,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         2.- Modelo OCR por Visión
                       </label>
                       <p className="text-[11px] text-neutral-400">
-                        Usado al indexar PDFs escaneados, tablas y ecuaciones a LaTeX.
+                        Fallback para páginas escaneadas (Gemini: máx. 14 págs/min · NVIDIA: máx. 38 págs/min).
                       </p>
                       <select
                         value={taskSettings.visionOcrModel}
@@ -810,12 +810,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         disabled={isLoadingSettings}
                         className="w-full rounded-xl bg-black/60 border border-white/15 focus:border-white/40 px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
                       >
-                        {googleModels.map((m) => (
-                          <option key={m.id} value={m.id} className="bg-neutral-900 text-white">
-                            {m.name} ({m.id})
-                          </option>
-                        ))}
+                        {googleModels.length > 0 && (
+                          <optgroup label="Google AI Studio (Máx. 14 págs/min)">
+                            {googleModels.map((m) => (
+                              <option key={m.id} value={m.id} className="bg-neutral-900 text-white">
+                                {m.name} ({m.id})
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {nvidiaModels.length > 0 && (
+                          <optgroup label="NVIDIA NIM Visión / OCR (Máx. 38 págs/min)">
+                            {nvidiaModels
+                              .filter((m) => m.supportsVision !== false)
+                              .map((m) => (
+                                <option key={m.id} value={m.id} className="bg-neutral-900 text-white">
+                                  {m.name} ({m.id})
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
                       </select>
+                      <div className="text-[10px] font-mono text-neutral-300 pt-0.5">
+                        {(() => {
+                          const selectedOcr = availableModels.find((m) => m.id === taskSettings.visionOcrModel);
+                          const isNvidia =
+                            selectedOcr?.provider === 'nvidia' ||
+                            taskSettings.visionOcrModel.includes('/') ||
+                            taskSettings.visionOcrModel.startsWith('nvidia') ||
+                            taskSettings.visionOcrModel.startsWith('meta') ||
+                            taskSettings.visionOcrModel.startsWith('qwen');
+                          return isNvidia
+                            ? 'Límite activo: NVIDIA NIM — máx. 38 páginas/minuto (solo páginas escaneadas)'
+                            : 'Límite activo: Google Gemini — máx. 14 páginas/minuto (solo páginas escaneadas)';
+                        })()}
+                      </div>
                     </div>
 
                     {/* 3. Modelo de Búsqueda Web */}
@@ -891,12 +920,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* Enable Vision OCR */}
                 <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.03] border border-white/10">
-                  <div>
+                  <div className="space-y-1">
                     <div className="text-xs font-semibold text-white">
-                      Activar Fallback OCR por Visión en PDFs Escaneados
+                      Activar Fallback OCR por Visión en Páginas Escaneadas
                     </div>
                     <div className="text-[11px] text-neutral-400">
-                      Si un PDF no contiene texto seleccionable, se procesa con el modelo de visión ({taskSettings.visionOcrModel}).
+                      La extracción inicia en Python por página; solo las páginas sin texto real usan OCR con{' '}
+                      <code className="text-neutral-200">{taskSettings.visionOcrModel}</code>.
+                    </div>
+                    <div className="text-[10px] font-mono text-neutral-300">
+                      {taskSettings.visionOcrModel.includes('/')
+                        ? 'Límite de tasa activo (NVIDIA NIM): máximo 38 páginas / minuto'
+                        : 'Límite de tasa activo (Google Gemini): máximo 14 páginas / minuto'}
                     </div>
                   </div>
                   <button

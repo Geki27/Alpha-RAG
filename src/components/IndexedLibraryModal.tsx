@@ -111,7 +111,7 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
 
   // Selected document for "Datos 🟡" detailed view
   const [selectedBookForData, setSelectedBookForData] = useState<DocumentSource | null>(null);
-  const [dataActiveTab, setDataActiveTab] = useState<'text_latex' | 'vectors' | 'intact_pdf'>('text_latex');
+  const [dataActiveTab, setDataActiveTab] = useState<'text_latex' | 'formulas' | 'vectors' | 'intact_pdf'>('text_latex');
   const [extractedTxtContent, setExtractedTxtContent] = useState<string>('');
   const [vectorJsonContent, setVectorJsonContent] = useState<any | null>(null);
   const [isLoadingBookData, setIsLoadingBookData] = useState<boolean>(false);
@@ -865,16 +865,55 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
                   </div>
                 </div>
                 <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-center">
-                  <div className="text-[10px] font-mono text-neutral-400 uppercase">Espacio Vectorial</div>
+                  <div className="text-[10px] font-mono text-neutral-400 uppercase">Fórmulas (LaTeX/JSON)</div>
                   <div className="text-sm font-bold font-mono text-white mt-0.5">
-                    768 Tensores D
+                    {Array.isArray(vectorJsonContent?.formulas)
+                      ? `${vectorJsonContent.formulas.length} fórmulas`
+                      : '768 Tensores D'}
                   </div>
                 </div>
               </div>
+
+              {/* Extraction Pipeline Telemetry (Python vs OCR Fallback) */}
+              {vectorJsonContent?.extractionPipeline && (
+                <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.08] space-y-2 text-[11px] font-mono">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-neutral-200">
+                    <span className="flex items-center gap-1.5 font-semibold text-white">
+                      <Terminal className="w-3.5 h-3.5 text-neutral-400" />
+                      Triage de Extracción: {vectorJsonContent.extractionPipeline.engine}
+                    </span>
+                    {vectorJsonContent.extractionPipeline.ocrModel && (
+                      <span className="text-neutral-300">
+                        OCR: {vectorJsonContent.extractionPipeline.ocrModel} (máx. {vectorJsonContent.extractionPipeline.ocrRateLimitPerMin || 14} págs/min)
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                    <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                      <div className="text-[10px] text-neutral-400">Nativas (Python)</div>
+                      <div className="text-xs font-bold text-emerald-400">
+                        {vectorJsonContent.extractionPipeline.nativePages ?? 0} págs
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                      <div className="text-[10px] text-neutral-400">Escaneadas</div>
+                      <div className="text-xs font-bold text-amber-300">
+                        {vectorJsonContent.extractionPipeline.scannedPages ?? 0} págs
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                      <div className="text-[10px] text-neutral-400">Procesadas OCR</div>
+                      <div className="text-xs font-bold text-white">
+                        {vectorJsonContent.extractionPipeline.ocrPagesProcessed ?? 0} págs
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Navigation Tabs inside Book Details */}
-            <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2">
+            <div className="flex items-center gap-2 border-b border-white/[0.08] pb-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => setDataActiveTab('text_latex')}
@@ -886,6 +925,22 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
               >
                 <Sigma className="w-3.5 h-3.5" />
                 <span>Texto & Fórmulas LaTeX (.txt)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDataActiveTab('formulas')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  dataActiveTab === 'formulas'
+                    ? 'bg-white text-black font-semibold shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-neutral-300 hover:text-white border border-white/10'
+                }`}
+              >
+                <Sigma className="w-3.5 h-3.5" />
+                <span>
+                  Fórmulas (LaTeX + JSON
+                  {Array.isArray(vectorJsonContent?.formulas) ? `: ${vectorJsonContent.formulas.length}` : ''})
+                </span>
               </button>
 
               <button
@@ -958,6 +1013,57 @@ export const IndexedLibraryModal: React.FC<IndexedLibraryModalProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* TAB 1B: Fórmulas Reconstruidas (LaTeX + JSON) */}
+            {dataActiveTab === 'formulas' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs font-mono text-neutral-300">
+                    Fórmulas matemáticas reconstruidas en LaTeX y JSON estructurado:
+                  </span>
+                  {Array.isArray(vectorJsonContent?.formulas) && vectorJsonContent.formulas.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLatex(JSON.stringify(vectorJsonContent.formulas, null, 2))}
+                      className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-[11px] font-mono text-neutral-200 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      {copiedLatex ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedLatex ? 'JSON Copiado' : 'Copiar Fórmulas JSON'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {Array.isArray(vectorJsonContent?.formulas) && vectorJsonContent.formulas.length > 0 ? (
+                  <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
+                    {vectorJsonContent.formulas.map((fm: any, idx: number) => (
+                      <div
+                        key={fm.id || idx}
+                        className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400">
+                          <span className="text-white font-semibold">
+                            {fm.id || `eq-${idx + 1}`} · Pág. {fm.pageNumber}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/10 text-neutral-300">
+                            {fm.source === 'ocr_vision' ? 'OCR Visión' : 'Python Nativo'} · {fm.json?.type || 'equation'}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06]">
+                          <MarkdownRenderer content={`$$${fm.latex}$$`} />
+                        </div>
+                        <pre className="text-[11px] font-mono text-neutral-300 overflow-x-auto p-2.5 rounded-xl bg-black/60 border border-white/[0.06]">
+                          {JSON.stringify(fm.json, null, 2)}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-10 text-center text-xs text-neutral-400 font-mono rounded-2xl bg-white/[0.02] border border-white/[0.08]">
+                    No se detectaron ecuaciones matemáticas estructuradas en este documento.
+                  </div>
+                )}
               </div>
             )}
 

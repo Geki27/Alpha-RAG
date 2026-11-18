@@ -44,9 +44,14 @@ function sanitizeSettings(raw: Partial<RuntimeTaskSettings> | undefined, base: R
       ? raw.activeTab
       : base.activeTab;
 
+  const rawVisionModel =
+    typeof raw.visionOcrModel === 'string' && raw.visionOcrModel.trim()
+      ? raw.visionOcrModel.trim()
+      : base.visionOcrModel;
+
   return {
     chatModel: typeof raw.chatModel === 'string' && raw.chatModel.trim() ? raw.chatModel.trim() : base.chatModel,
-    visionOcrModel: typeof raw.visionOcrModel === 'string' && raw.visionOcrModel.trim() ? raw.visionOcrModel.trim() : base.visionOcrModel,
+    visionOcrModel: rawVisionModel === 'nano-banana' ? 'gemini-2.5-flash' : rawVisionModel,
     webSearchModel: typeof raw.webSearchModel === 'string' && raw.webSearchModel.trim() ? raw.webSearchModel.trim() : base.webSearchModel,
     embeddingModel: typeof raw.embeddingModel === 'string' && raw.embeddingModel.trim() ? raw.embeddingModel.trim() : base.embeddingModel,
 
